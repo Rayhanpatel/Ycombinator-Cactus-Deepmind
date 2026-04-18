@@ -1,0 +1,6 @@
+# google-genai          # Gemini cloud fallback
+python-dotenv>=1.0.0    # Environment variable management
+sounddevice>=0.4.6      # Audio recording
+soundfile>=0.12.1       # Audio file I/O
+numpy>=1.24.0           # Audio processing
+pyaudio>=0.2.13         # Alternative audio backend

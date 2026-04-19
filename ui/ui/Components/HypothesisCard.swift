@@ -18,10 +18,12 @@ struct HypothesisCard: View {
             Text(hypothesis.title)
                 .font(.system(.title2, design: .rounded, weight: .bold))
                 .foregroundStyle(.white)
+                .lineLimit(2)
 
             Text(hypothesis.rationale)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(AppTheme.mist)
+                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .top, spacing: 10) {
@@ -30,11 +32,13 @@ struct HypothesisCard: View {
                 Text(hypothesis.nextStep)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
+                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(18)
+        .padding(16)
         .glassCard(cornerRadius: 28, fill: Color.black.opacity(0.34))
+        .frame(maxWidth: 360, alignment: .leading)
     }
 }
 

@@ -6,7 +6,7 @@ struct TranscriptCard: View {
     let footer: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("Transcript", systemImage: "captions.bubble")
                     .font(.headline.weight(.bold))
@@ -21,15 +21,16 @@ struct TranscriptCard: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(lines.suffix(3))) { line in
+                ForEach(Array(lines.suffix(2))) { line in
                     HStack(alignment: .top, spacing: 10) {
                         Text(line.speaker.title)
                             .font(.caption.weight(.bold))
                             .foregroundStyle(line.speaker.tint)
-                            .frame(width: 58, alignment: .leading)
+                            .frame(width: 50, alignment: .leading)
                         Text(line.text)
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(AppTheme.mist)
+                            .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -40,9 +41,10 @@ struct TranscriptCard: View {
                 Text(footer)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppTheme.mist.opacity(0.72))
+                    .lineLimit(1)
             }
         }
-        .padding(18)
+        .padding(16)
         .glassCard(cornerRadius: 26, fill: Color.black.opacity(0.38))
     }
 

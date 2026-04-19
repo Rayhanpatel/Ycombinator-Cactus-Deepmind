@@ -4,29 +4,30 @@ struct TalkButton: View {
     let stage: SessionStage
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             ZStack {
                 Circle()
                     .fill(coreColor.opacity(0.18))
-                    .frame(width: 106, height: 106)
+                    .frame(width: 88, height: 88)
 
                 Circle()
                     .fill(coreColor)
-                    .frame(width: 82, height: 82)
+                    .frame(width: 70, height: 70)
                     .overlay(
                         Image(systemName: iconName)
-                            .font(.system(size: 28, weight: .bold))
+                            .font(.system(size: 24, weight: .bold))
                             .foregroundStyle(.white)
                     )
             }
 
             VStack(spacing: 2) {
                 Text(title)
-                    .font(.headline.weight(.bold))
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(.white)
                 Text(subtitle)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppTheme.mist.opacity(0.72))
+                    .multilineTextAlignment(.center)
             }
         }
     }

@@ -5,7 +5,7 @@ struct BottomActionBar: View {
     let onCloseJobTap: () -> Void
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(alignment: .center, spacing: 12) {
             TalkButton(stage: stage)
                 .frame(maxWidth: .infinity)
 
@@ -18,8 +18,8 @@ struct BottomActionBar: View {
                         .foregroundStyle(AppTheme.mist.opacity(0.72))
                 }
                 .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 90, alignment: .leading)
-                .padding(.horizontal, 18)
+                .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+                .padding(.horizontal, 16)
                 .background(
                     LinearGradient(
                         colors: [AppTheme.panelFillStrong, AppTheme.graphite.opacity(0.95)],

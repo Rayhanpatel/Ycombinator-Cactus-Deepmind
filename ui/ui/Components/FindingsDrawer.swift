@@ -4,7 +4,7 @@ struct FindingsDrawer: View {
     let findings: [MockFinding]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             RoundedRectangle(cornerRadius: 999, style: .continuous)
                 .fill(Color.white.opacity(0.18))
                 .frame(width: 42, height: 5)
@@ -25,8 +25,8 @@ struct FindingsDrawer: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(AppTheme.mist.opacity(0.84))
             } else {
-                VStack(spacing: 10) {
-                    ForEach(findings.prefix(3)) { finding in
+                VStack(spacing: 8) {
+                    ForEach(findings.prefix(2)) { finding in
                         HStack(alignment: .top, spacing: 12) {
                             Circle()
                                 .fill(finding.severity.tint)
@@ -37,14 +37,17 @@ struct FindingsDrawer: View {
                                     Text(finding.title)
                                         .font(.subheadline.weight(.bold))
                                         .foregroundStyle(.white)
+                                        .lineLimit(1)
                                     Spacer()
                                     Text(finding.location)
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(AppTheme.mist.opacity(0.72))
+                                        .lineLimit(1)
                                 }
                                 Text(finding.note)
                                     .font(.caption.weight(.medium))
                                     .foregroundStyle(AppTheme.mist)
+                                    .lineLimit(2)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
@@ -52,7 +55,7 @@ struct FindingsDrawer: View {
                 }
             }
         }
-        .padding(18)
+        .padding(16)
         .glassCard(cornerRadius: 28, fill: Color.black.opacity(0.46))
     }
 }

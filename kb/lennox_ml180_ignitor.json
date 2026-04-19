@@ -1,0 +1,27 @@
+{
+  "id": "lennox-ml180-ignitor",
+  "brand": "Lennox",
+  "model": "ML180",
+  "equipment_type": "furnace",
+  "symptom": "Furnace ignites briefly (4-7 seconds) then shuts down. Blower continues. No heat. Often presents as intermittent no-heat, worse after a humid day.",
+  "diagnosis": "Dirty or failing flame sensor. Oxide buildup prevents the board from detecting flame, triggering flame-loss shutdown.",
+  "part_number": "10K5601 (sensor) — often replaceable by cleaning",
+  "procedure": [
+    "Kill power at the furnace switch.",
+    "Remove the burner compartment cover.",
+    "Locate the flame sensor — single metal rod with a ceramic insulator, mounted at the burner tray, opposite the ignitor.",
+    "Remove the 1/4\" hex-head screw holding the sensor bracket. Pull the sensor out carefully.",
+    "Disconnect the single sensor wire from the spade terminal.",
+    "Clean the sensor rod with fine steel wool or 400-grit emery cloth — light pressure, clean until dull metal is uniform. Do NOT sand the ceramic.",
+    "Wipe with a dry cloth. Reinstall in the same position.",
+    "Restore power and run a heat cycle. Flame should establish and stay lit. Blower should run after the fan-on delay.",
+    "If cleaning doesn't resolve the issue in the next cycle, replace with Lennox 10K5601."
+  ],
+  "safety_notes": [
+    "Power must be OFF — control board can energize the ignitor unexpectedly during diagnostics.",
+    "Gas supply should be off at the appliance shutoff before removing the burner cover.",
+    "If you smell gas at any point, stop, ventilate, and flag_safety."
+  ],
+  "estimated_minutes": 20,
+  "tags": ["flame sensor", "short cycle heat", "ignites then stops", "ML180", "lennox", "furnace no heat"]
+}

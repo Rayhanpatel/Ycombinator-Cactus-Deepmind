@@ -1,0 +1,25 @@
+{
+  "id": "trane-xr14-contactor",
+  "brand": "Trane",
+  "model": "4TTR4",
+  "equipment_type": "ac-condenser",
+  "symptom": "Outdoor unit does not energize when thermostat calls for cooling. Indoor blower runs. 24V control voltage present at Y terminal but compressor and fan stay off.",
+  "diagnosis": "Pitted, stuck, or failed 24V contactor. Common on Trane XR14 after 5-8 years in humid climates.",
+  "part_number": "CTR02266",
+  "procedure": [
+    "Kill power at the disconnect and verify with a tester.",
+    "Open the control compartment on the condenser.",
+    "Visually inspect the contactor — pitting, burn marks, or welded contacts are failure signs.",
+    "Check the 24V coil for continuity (should read ~10-20 ohms). Open coil = replace.",
+    "With power restored, energize the thermostat call for cool and listen for a definitive 'click' at the contactor. No click with 24V present at the coil = failed contactor.",
+    "Kill power again. Label and remove line-voltage leads (L1, L2) and low-voltage leads.",
+    "Swap in CTR02266 (2-pole, 30A, 24V coil). Reconnect leads in the same positions.",
+    "Restore power, test cooling cycle. Confirm contactor pulls in cleanly and compressor starts."
+  ],
+  "safety_notes": [
+    "Line voltage is present on the contactor's top lugs even with the disconnect pulled if the unit is still wired to a live breaker — check BOTH.",
+    "Never bypass a contactor by jumpering L1 to T1 as a diagnostic — hazardous and can damage the compressor."
+  ],
+  "estimated_minutes": 35,
+  "tags": ["contactor", "no cool", "condenser won't start", "24V", "XR14", "trane", "pitted contacts"]
+}

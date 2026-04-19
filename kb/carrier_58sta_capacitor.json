@@ -1,0 +1,27 @@
+{
+  "id": "carrier-58sta-capacitor",
+  "brand": "Carrier",
+  "model": "58STA090",
+  "equipment_type": "ac-condenser",
+  "symptom": "Intermittent cooling with audible clicking from the outdoor unit. Compressor attempts to start then trips out after a few seconds. Short cycling pattern.",
+  "diagnosis": "Failed or weak dual-run capacitor. Compressor cannot achieve starting torque, trips internal overload.",
+  "part_number": "P291-4554RS",
+  "procedure": [
+    "Kill power at the disconnect and the breaker. Verify with non-contact tester.",
+    "Remove the outdoor unit access panel (4 sheet-metal screws).",
+    "Discharge the existing capacitor across HERM and C terminals with an insulated 20k ohm resistor.",
+    "Note wire colors: Yellow to HERM (compressor), Brown to FAN, Black to C (common).",
+    "Measure capacitance on both sides with a multimeter in capacitance mode. Spec: 45 uF (HERM) / 5 uF (FAN), ±6%.",
+    "If either side reads >6% off spec, replace with P291-4554RS (45/5 uF 440V).",
+    "Reconnect wires to matching terminals. Secure with the original retaining bracket.",
+    "Restore power. Verify compressor starts without clicking; listen for 3 full cooling cycles.",
+    "Confirm supply air temp drop of 15-20°F across the air handler."
+  ],
+  "safety_notes": [
+    "Capacitors store lethal voltage even when power is off — always discharge before touching terminals.",
+    "Verify disconnect is pulled AND breaker is off. Tag if needed.",
+    "Bulging or leaking capacitors indicate failure; handle with gloves."
+  ],
+  "estimated_minutes": 25,
+  "tags": ["capacitor", "short cycling", "clicking", "compressor", "dual run", "58STA", "carrier"]
+}

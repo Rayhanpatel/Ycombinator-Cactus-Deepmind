@@ -20,7 +20,7 @@ enum AppModelLocation {
         }
     }
 
-    static let setupHint = "Add the unzipped Gemma folder as a folder reference at ios-cactus/ios-cactus/Models/ or copy it under Library/Application Support/Models/."
+    static let setupHint = "Place the unzipped Gemma folder under ios-cactus/ios-cactus/Models/ or copy it under Library/Application Support/Models/."
 
     private static let preferredModelNames = [
         "gemma-4-e2b-it-int4-apple",

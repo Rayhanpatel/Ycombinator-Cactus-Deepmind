@@ -1,4 +1,4 @@
-Drop your unzipped Gemma model folder here as a folder reference for local testing.
+Drop your unzipped Gemma model folder here for local testing.
 
 Preferred first model:
 - `gemma-4-e2b-it-int4-apple`

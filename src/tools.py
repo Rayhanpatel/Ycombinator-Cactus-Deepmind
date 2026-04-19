@@ -48,9 +48,10 @@ class HVACToolDispatcher:
 
     def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
         """Run a tool by name. Always returns a JSON string."""
+        tool_name = (tool_name or "").strip()  # Gemma 4 sometimes emits leading whitespace
         handler = getattr(self, f"_tool_{tool_name}", None)
         if handler is None:
-            logger.error(f"Unknown tool: {tool_name}")
+            logger.error(f"Unknown tool: {tool_name!r}")
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
         try:

@@ -17,8 +17,11 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import re
+import tempfile
 import time
+import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -27,7 +30,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.cactus import cactus_init, cactus_complete, cactus_destroy
+from src.cactus import cactus_init, cactus_complete, cactus_destroy, cactus_prefill, cactus_reset
 from src.config import cfg
 from src.findings_store import FindingsStore
 from src.kb_store import get_kb_store
@@ -200,6 +203,45 @@ def strip_tool_call_text(text: str) -> str:
     return _TOOL_CALL_CURLY.sub("", _TOOL_CALL_PAREN.sub("", text)).strip()
 
 
+def save_pcm_as_wav(pcm_bytes: bytes, sample_rate: int = 16000) -> str:
+    """Wrap raw PCM16 LE mono bytes in a proper WAV header and return the file path.
+    Cactus's `audio` message field wants file paths, not raw buffers."""
+    fd, path = tempfile.mkstemp(suffix=".wav", dir="/tmp")
+    os.close(fd)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        w.writeframes(pcm_bytes)
+    return path
+
+
+def save_jpeg(jpeg_bytes: bytes) -> str:
+    fd, path = tempfile.mkstemp(suffix=".jpg", dir="/tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(jpeg_bytes)
+    except Exception:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        raise
+    return path
+
+
+def decode_data_url_b64(s: str) -> bytes:
+    """Accept either a bare base64 string or a data:image/jpeg;base64,... URL."""
+    if not s:
+        return b""
+    if s.startswith("data:") and "," in s:
+        s = s.split(",", 1)[1]
+    try:
+        return base64.b64decode(s)
+    except Exception:
+        return b""
+
+
 class EngineHandle:
     """Single shared Cactus handle, serialized via asyncio lock."""
 
@@ -215,10 +257,43 @@ class EngineHandle:
             raise RuntimeError("cactus_init returned None")
         logger.info(f"Loaded in {time.time() - t0:.1f}s")
 
+    def prefill_system(self) -> None:
+        """Warm the KV cache with the system prompt + tool schemas so the
+        first user turn starts decoding immediately."""
+        if self._handle is None:
+            raise RuntimeError("Cactus handle not initialized")
+        t0 = time.time()
+        try:
+            cactus_prefill(
+                self._handle,
+                json.dumps([{"role": "system", "content": SYSTEM_PROMPT}]),
+                json.dumps(GEN_OPTIONS),
+                get_tools_json(),
+                None,
+            )
+            logger.info(f"System prompt prefilled in {time.time() - t0:.2f}s")
+        except Exception as e:
+            logger.warning(f"cactus_prefill skipped: {e}")
+
     def unload(self) -> None:
         if self._handle is not None:
             cactus_destroy(self._handle)
             self._handle = None
+
+    def reset_and_rewarm(self) -> None:
+        """Clear the KV cache after a failed completion and re-prefill the
+        system prompt so the next turn starts fresh."""
+        if self._handle is None:
+            return
+        try:
+            cactus_reset(self._handle)
+            logger.info("KV cache reset after error")
+        except Exception as e:
+            logger.warning(f"cactus_reset failed: {e}")
+        try:
+            self.prefill_system()
+        except Exception as e:
+            logger.warning(f"prefill after reset failed: {e}")
 
     @property
     def handle(self) -> int:
@@ -239,6 +314,7 @@ async def lifespan(app: FastAPI):
     # startup
     get_kb_store()  # warm the KB cache
     engine.load(WEIGHTS_DIR)
+    engine.prefill_system()
     yield
     # shutdown
     engine.unload()
@@ -266,12 +342,13 @@ async def healthz():
 
 
 class Session:
-    """Per-connection state: conversation history + dispatcher."""
+    """Per-connection state: conversation history + dispatcher + per-turn temp files."""
 
     def __init__(self, ws: WebSocket) -> None:
         self.ws = ws
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.dispatcher = HVACToolDispatcher(findings_store=FindingsStore())
+        self._temp_files: list[str] = []
 
     async def send(self, payload: dict[str, Any]) -> None:
         await self.ws.send_text(json.dumps(payload))
@@ -282,17 +359,66 @@ class Session:
     def add_user_text(self, content: str) -> None:
         self.messages.append({"role": "user", "content": content})
 
-    def add_user_audio_bytes(self, raw: bytes) -> list[int]:
-        """Return pcm int list for cactus_complete's pcm_data argument."""
-        self.messages.append({"role": "user", "content": "<audio>"})
-        return list(raw)
+    # Audio shorter than ~100 ms @ 16 kHz mono PCM16 (3200 bytes) is almost
+    # always a user who tapped the mic by accident. A 44-byte WAV header with
+    # no frames makes Cactus's C audio decoder throw "Could not open WAV file",
+    # which then kills the whole turn. Reject early.
+    MIN_AUDIO_BYTES = 3200
+
+    def add_user_multimodal(
+        self,
+        content: str,
+        pcm_bytes: bytes | None = None,
+        jpeg_bytes: bytes | None = None,
+    ) -> None:
+        """Append a user message carrying audio and/or image via file-path fields —
+        the canonical Gemma 4 + Cactus multimodal format. Caller should run
+        cleanup_turn_files() once the turn is done.
+
+        Raises ValueError if audio is provided but too short to be meaningful.
+        """
+        if pcm_bytes is not None and len(pcm_bytes) < self.MIN_AUDIO_BYTES:
+            raise ValueError(
+                f"Audio too short ({len(pcm_bytes)} bytes < {self.MIN_AUDIO_BYTES}) — "
+                "hold the mic for at least a moment."
+            )
+        msg: dict[str, Any] = {"role": "user", "content": content or "<multimodal>"}
+        if pcm_bytes:
+            wav_path = save_pcm_as_wav(pcm_bytes)
+            msg["audio"] = [wav_path]
+            self._temp_files.append(wav_path)
+        if jpeg_bytes:
+            jpg_path = save_jpeg(jpeg_bytes)
+            msg["images"] = [jpg_path]
+            self._temp_files.append(jpg_path)
+        self.messages.append(msg)
+
+    def pop_last_user_message(self) -> None:
+        """Remove the most recently-added user message. Used to roll back after
+        a completion error so the conversation history stays consistent."""
+        for i in range(len(self.messages) - 1, -1, -1):
+            if self.messages[i].get("role") == "user":
+                del self.messages[i]
+                break
+
+    def cleanup_turn_files(self) -> None:
+        """Best-effort delete of temp files registered this turn."""
+        for p in self._temp_files:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+        self._temp_files.clear()
 
     def reset(self) -> None:
+        self.cleanup_turn_files()
         self.messages = [self.messages[0]]  # keep system prompt
         self.dispatcher = HVACToolDispatcher(findings_store=FindingsStore())
 
-    async def _complete_once(self, pcm_bytes: bytes | None) -> dict[str, Any]:
-        """Run one cactus_complete with token streaming to the client. Returns parsed JSON."""
+    async def _complete_once(self) -> dict[str, Any]:
+        """Run one cactus_complete with token streaming to the client. Returns parsed JSON.
+        Audio + images are carried inside self.messages via `audio` / `images` fields;
+        we no longer thread raw PCM through the pcm_data parameter."""
         loop = asyncio.get_running_loop()
         token_queue: asyncio.Queue[str] = asyncio.Queue()
 
@@ -308,7 +434,7 @@ class Session:
                     json.dumps(GEN_OPTIONS),
                     get_tools_json(),
                     on_token,
-                    list(pcm_bytes) if pcm_bytes else None,
+                    None,
                 ),
             )
             while not task.done():
@@ -354,19 +480,18 @@ class Session:
             })
         return tool_messages
 
-    async def run_turn(self, pcm_bytes: bytes | None = None, max_passes: int = 3) -> None:
+    async def run_turn(self, max_passes: int = 3) -> None:
         """
         Execute a full assistant turn: completion → (execute tools → completion) loop,
         capped at max_passes so a runaway model can't spin. Streams tokens to the client.
+        Any audio/image files registered for this turn are cleaned up at the end.
         """
         final_text = ""
         ttft: float | None = None
         decode_tps: float | None = None
-        pcm_for_pass: bytes | None = pcm_bytes
 
         for pass_idx in range(max_passes):
-            result = await self._complete_once(pcm_for_pass)
-            pcm_for_pass = None  # audio goes in on the first pass only
+            result = await self._complete_once()
 
             assistant_text = result.get("response", "") or ""
             function_calls = result.get("function_calls") or []
@@ -397,6 +522,7 @@ class Session:
             "ttft_ms": ttft,
             "decode_tps": decode_tps,
         })
+        self.cleanup_turn_files()
 
 
 @app.websocket("/ws/session")
@@ -417,36 +543,73 @@ async def ws_session(ws: WebSocket) -> None:
 
             kind = msg.get("type")
 
-            if kind == "text":
-                content = (msg.get("content") or "").strip()
-                if not content:
-                    continue
-                session.add_user_text(content)
-                await session.run_turn()
+            # Per-message try so one bad turn (empty audio, model crash) can't
+            # kill the whole WS loop. Every branch MUST go through here.
+            try:
+                if kind == "text":
+                    content = (msg.get("content") or "").strip()
+                    if not content:
+                        continue
+                    session.add_user_text(content)
+                    await session.run_turn()
 
-            elif kind == "audio":
-                # Raw PCM16 LE bytes base64-encoded.
-                b64 = msg.get("pcm_b64") or ""
-                try:
-                    pcm = base64.b64decode(b64) if b64 else b""
-                except Exception:
-                    await session.send({"type": "error", "message": "Bad audio base64"})
-                    continue
-                if not pcm:
-                    continue
-                session.add_user_audio_bytes(pcm)
-                await session.run_turn(pcm_bytes=pcm)
+                elif kind == "audio":
+                    pcm = decode_data_url_b64(msg.get("pcm_b64") or "")
+                    if not pcm:
+                        continue
+                    prompt = (
+                        msg.get("content")
+                        or "A technician just spoke. Listen to the audio, identify the HVAC symptom "
+                           "and brand/model if mentioned, and call the appropriate tool."
+                    )
+                    session.add_user_multimodal(prompt, pcm_bytes=pcm)
+                    await session.run_turn()
 
-            elif kind == "reset":
-                session.reset()
-                await session.send_session_state()
-                await session.send({"type": "ready"})
+                elif kind == "multimodal":
+                    pcm = decode_data_url_b64(msg.get("pcm_b64") or "")
+                    jpeg = decode_data_url_b64(msg.get("jpeg_b64") or "")
+                    if not pcm and not jpeg:
+                        await session.send({"type": "error", "message": "multimodal requires pcm_b64 and/or jpeg_b64"})
+                        continue
+                    prompt = (
+                        msg.get("content")
+                        or "A technician is pointing their camera at an HVAC unit and describing what they see. "
+                           "Use the image + audio together: identify brand/model if visible, extract symptoms "
+                           "from speech, and call the appropriate tool."
+                    )
+                    session.add_user_multimodal(prompt, pcm_bytes=pcm or None, jpeg_bytes=jpeg or None)
+                    await session.run_turn()
 
-            elif kind == "ping":
-                await session.send({"type": "pong"})
+                elif kind == "reset":
+                    session.reset()
+                    engine.reset_and_rewarm()
+                    await session.send_session_state()
+                    await session.send({"type": "ready"})
 
-            else:
-                await session.send({"type": "error", "message": f"Unknown type: {kind}"})
+                elif kind == "ping":
+                    await session.send({"type": "pong"})
+
+                else:
+                    await session.send({"type": "error", "message": f"Unknown type: {kind}"})
+
+            except ValueError as ve:
+                # Guard-rail rejection (e.g. empty audio). Client-side input problem,
+                # not a model crash. No state to clean up — add_user_multimodal
+                # throws before appending.
+                logger.info(f"Rejected turn: {ve}")
+                await session.send({"type": "error", "message": str(ve)})
+                await session.send({"type": "assistant_end", "text": ""})
+
+            except Exception as turn_err:
+                # Model/infra crash mid-turn. Roll back the user message we
+                # appended, delete temp files, reset the KV cache, and let the
+                # user try again without reconnecting.
+                logger.exception(f"Turn failed: {turn_err}")
+                session.pop_last_user_message()
+                session.cleanup_turn_files()
+                engine.reset_and_rewarm()
+                await session.send({"type": "error", "message": f"Completion failed: {turn_err}"})
+                await session.send({"type": "assistant_end", "text": ""})
 
     except WebSocketDisconnect:
         logger.info("WS disconnected")

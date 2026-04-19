@@ -1,8 +1,8 @@
 // CactusModel.swift
 // Thin wrapper around the Cactus Swift SDK. One actor owns model lifecycle.
-// API surface used:
-//   cactusInit(modelPath, nil, false) -> OpaquePointer
-//   cactusComplete(model, messagesJSON, optionsJSON, toolsJSON, callback) -> resultJSON
+// API surface (from Cactus.swift):
+//   cactusInit(modelPath, corpusDir?, cacheIndex) -> CactusModelT (UnsafeMutableRawPointer)
+//   cactusComplete(model, messagesJSON, optionsJSON?, toolsJSON?, callback?) -> resultJSON
 
 import Foundation
 import cactus
@@ -10,7 +10,7 @@ import cactus
 actor CactusModel {
     static let shared = CactusModel()
 
-    private var model: OpaquePointer?
+    private var model: UnsafeMutableRawPointer?
     private(set) var isLoaded: Bool = false
     private(set) var lastError: String?
 

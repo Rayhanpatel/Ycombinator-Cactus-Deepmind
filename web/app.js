@@ -52,6 +52,9 @@ let pendingFrameB64 = null;
 let frameInterval = null;
 let isGenerating = false;   // true from send → assistant_end
 let rokidPreviewKey = "";
+let remoteAudioEl = null;
+let remoteAudioUrl = "";
+let pendingRokidAudioFallback = null;
 
 // ── Web Speech API (STT) ────────────────────────────────────
 // Wine_Voice_AI pattern: Chrome does transcription in-browser. No PCM goes
@@ -159,16 +162,96 @@ function queueSpeech(text) {
   playNext();
 }
 
+function clearPendingRokidAudioFallback() {
+  if (pendingRokidAudioFallback) {
+    clearTimeout(pendingRokidAudioFallback);
+    pendingRokidAudioFallback = null;
+  }
+}
+
+function maybeResumeReadyState() {
+  if (isGenerating || isSpeaking || speechQueue.length > 0) return;
+  setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
+  if (handsFree) {
+    setTimeout(() => {
+      suppressOnResult = false;
+      startRecognition();
+    }, TTS_COOLDOWN_MS);
+  }
+}
+
+function clearRemoteAudio() {
+  if (remoteAudioEl) {
+    remoteAudioEl.pause();
+    remoteAudioEl.src = "";
+    remoteAudioEl = null;
+  }
+  if (remoteAudioUrl) {
+    URL.revokeObjectURL(remoteAudioUrl);
+    remoteAudioUrl = "";
+  }
+}
+
+function stopAllPlayback() {
+  window.speechSynthesis.cancel();
+  speechQueue.length = 0;
+  sentenceBuffer = "";
+  isSpeaking = false;
+  clearPendingRokidAudioFallback();
+  clearRemoteAudio();
+}
+
+function decodeBase64Audio(b64) {
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function playRemoteAssistantAudio(evt) {
+  const audioB64 = evt.audio_b64 || "";
+  if (!audioB64) {
+    maybeResumeReadyState();
+    return;
+  }
+  clearPendingRokidAudioFallback();
+  stopAllPlayback();
+
+  const mimeType = evt.mime_type || "audio/wav";
+  const blob = new Blob([decodeBase64Audio(audioB64)], { type: mimeType });
+  remoteAudioUrl = URL.createObjectURL(blob);
+  const audio = new Audio(remoteAudioUrl);
+  audio.autoplay = true;
+  audio.preload = "auto";
+  audio.playsInline = true;
+  remoteAudioEl = audio;
+
+  const finish = () => {
+    isSpeaking = false;
+    clearRemoteAudio();
+    maybeResumeReadyState();
+  };
+
+  audio.onplay = () => {
+    isSpeaking = true;
+    setStatus("speaking…", "thinking");
+  };
+  audio.onended = finish;
+  audio.onerror = () => {
+    addMessage("system-note", "[rokid browser audio failed]");
+    finish();
+  };
+
+  audio.play().catch((err) => {
+    addMessage("system-note", `[rokid browser audio blocked: ${err.message}]`);
+    finish();
+  });
+}
+
 function playNext() {
   if (isSpeaking) return;
   if (speechQueue.length === 0) {
-    // Done speaking; re-enable mic after a short cooldown to avoid echo pickup.
-    if (handsFree) {
-      setTimeout(() => {
-        suppressOnResult = false;
-        startRecognition();
-      }, TTS_COOLDOWN_MS);
-    }
+    maybeResumeReadyState();
     return;
   }
   const sentence = speechQueue.shift();
@@ -227,12 +310,9 @@ function setGenerating(on) {
 }
 
 function sendCancel() {
+  stopAllPlayback();
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   // Cut TTS, clear any queued sentences, tell the server to cactus_stop.
-  window.speechSynthesis.cancel();
-  speechQueue.length = 0;
-  isSpeaking = false;
-  sentenceBuffer = "";
   ws.send(JSON.stringify({ type: "cancel" }));
   addMessage("system-note", "[stopped]");
   setGenerating(false);
@@ -278,16 +358,14 @@ function finishAssistant(finalText, stats, { source = "browser" } = {}) {
     flushSentenceBuffer(true);
   } else {
     sentenceBuffer = "";
+    clearPendingRokidAudioFallback();
+    pendingRokidAudioFallback = setTimeout(() => {
+      pendingRokidAudioFallback = null;
+      maybeResumeReadyState();
+    }, 1500);
+    return;
   }
-  if (!isSpeaking && speechQueue.length === 0) {
-    setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
-    if (handsFree) {
-      setTimeout(() => {
-        suppressOnResult = false;
-        startRecognition();
-      }, TTS_COOLDOWN_MS);
-    }
-  }
+  maybeResumeReadyState();
 }
 
 // ── Tool activity log ───────────────────────────────────────
@@ -476,6 +554,11 @@ function connect() {
         setGenerating(false);
         finishAssistant(evt.text, { ttft_ms: evt.ttft_ms, decode_tps: evt.decode_tps }, { source: evt.source || currentAssistantSource || "browser" });
         break;
+      case "assistant_audio":
+        if ((evt.source || "browser") === "rokid") {
+          playRemoteAssistantAudio(evt);
+        }
+        break;
       case "error":
         addMessage("system-note", `[${evt.message}]`);
         setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
@@ -556,10 +639,7 @@ function initRecognition() {
     // moment later in the normal flow.
     if (isSpeaking && merged.length >= MIN_UTTERANCE_CHARS) {
       console.log("[barge-in] cancelling TTS on mid-speak transcript:", merged.slice(0, 60));
-      window.speechSynthesis.cancel();
-      speechQueue.length = 0;
-      isSpeaking = false;
-      sentenceBuffer = "";
+      stopAllPlayback();
     }
 
     // Any new audio resets the silence timer.
@@ -651,9 +731,7 @@ function toggleHandsFree() {
     micBtn.textContent = "🎙️";
     micBtn.title = "Hands-free";
     stopRecognition();
-    window.speechSynthesis.cancel();
-    speechQueue.length = 0;
-    isSpeaking = false;
+    stopAllPlayback();
     // If the model was still generating when the user disabled hands-free,
     // treat it as an intent to abort — send cancel so it stops mid-stream.
     if (isGenerating) {
@@ -675,10 +753,7 @@ composer.addEventListener("submit", (e) => {
 
 resetBtn.addEventListener("click", () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  window.speechSynthesis.cancel();
-  speechQueue.length = 0;
-  isSpeaking = false;
-  sentenceBuffer = "";
+  stopAllPlayback();
   ws.send(JSON.stringify({ type: "reset" }));
   transcriptEl.innerHTML = "";
   toolLog.innerHTML = "";

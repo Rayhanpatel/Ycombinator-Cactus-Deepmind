@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import json
 import logging
 import socket
 import time
+import wave
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -85,6 +87,16 @@ def encode_jpeg(rgb_frame: Any, *, width: int | None = None) -> bytes:
         image = image.resize((width, height))
     output = io.BytesIO()
     image.save(output, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+    return output.getvalue()
+
+
+def pcm16_to_wav_bytes(pcm_bytes: bytes, *, sample_rate: int, channels: int = 1) -> bytes:
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_bytes)
     return output.getvalue()
 
 
@@ -1063,6 +1075,20 @@ class RokidBridgeManager:
                 audio_bytes=len(pcm_bytes),
                 audio_duration_ms=round(duration * 1000, 1),
             )
+            if duration > 0:
+                wav_bytes = pcm16_to_wav_bytes(pcm_bytes, sample_rate=sample_rate)
+                await self.runtime.broadcast({
+                    "type": "assistant_audio",
+                    "source": "rokid",
+                    "turn_id": turn_id,
+                    "mime_type": "audio/wav",
+                    "audio_b64": base64.b64encode(wav_bytes).decode("ascii"),
+                })
+                log_event(
+                    "rokid_browser_audio_broadcast",
+                    turn_id=turn_id,
+                    wav_bytes=len(wav_bytes),
+                )
             await self._mutate_state(tts_playing=duration > 0, speech_state="speaking", last_assistant_text=text)
             if duration > 0:
                 log_event("rokid_audio_enqueued", turn_id=turn_id, audio_duration_ms=round(duration * 1000, 1))

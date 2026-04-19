@@ -15,7 +15,7 @@ The app turns the Rokid glasses into the field interface for HVAC Copilot.
 - The glasses send live camera and microphone audio to the Mac over WebRTC.
 - The Mac server performs turn detection, English transcription, Gemma/Cactus reasoning, tool calls, and text-to-speech.
 - The assistant reply is spoken back through the Rokid glasses speaker.
-- If the browser UI is open, it also shows the live transcript, tool activity, session state, and Rokid preview.
+- If the browser UI is open, it also shows the live transcript, tool activity, session state, Rokid preview, and mirrored reply audio.
 
 Current assumptions:
 
@@ -56,7 +56,7 @@ Current assumptions:
    - synthesizes the reply with Kokoro
    - sends the synthesized audio back as a remote WebRTC audio track
 4. The Rokid app plays the remote assistant audio and shows short status/display text in the HUD.
-5. The browser UI, if open, mirrors the same transcript and session updates.
+5. The browser UI, if open, mirrors the same transcript and session updates and can play the same synthesized reply audio locally.
 
 ### Speech stack
 
@@ -66,7 +66,7 @@ For Rokid mode the Mac server uses:
 - STT: `faster-whisper` with `small.en`
 - TTS: Kokoro with American English `lang_code="a"` and voice `af_heart`
 
-The browser UI still has its original browser speech features, but the Rokid flow does not depend on them.
+The browser UI still has its original browser speech features. For Rokid turns it now also mirrors the Mac-generated Kokoro reply audio, so the operator can hear the same answer locally without relying on browser speech synthesis.
 
 The current default Rokid VAD tuning is intentionally biased toward rejecting background noise:
 
@@ -208,7 +208,7 @@ The HUD shows:
 - Once a Rokid utterance starts a Gemma turn, additional Rokid speech is ignored until the assistant finishes thinking and speaking the reply.
 - This is intentional in the current app: Rokid mode favors single-turn stability over barge-in so the server does not keep canceling and restarting Gemma.
 - Assistant replies are played on the Rokid speaker.
-- If the browser UI is open, it also receives the same assistant events.
+- If the browser UI is open, it also receives the same assistant events and plays the same synthesized reply audio locally.
 
 ## Important files
 

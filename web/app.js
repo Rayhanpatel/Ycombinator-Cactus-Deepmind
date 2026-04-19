@@ -138,6 +138,24 @@ function splitBySentence(text) {
   return text.split(/(?<=[.!?])\s+(?=[A-Z])/).filter(s => s.trim());
 }
 
+// Gemma 4 streams internal control tokens — chain-of-thought via
+// <|channel>thought ... <|channel|>, and tool-call markers like
+// <|tool_call>call: query_kb(...). Those should never appear in the
+// transcript or be spoken by TTS. Strip them from raw text before
+// display/speech. Also strip dangling partial markers at buffer end
+// so we don't flash them during streaming.
+function stripHiddenMarkers(text) {
+  // Full <|channel>...<|channel|> or <|channel>...<channel|> blocks
+  text = text.replace(/<\|channel\|?>[\s\S]*?<\|?channel\|>/g, "");
+  // Full <|tool_call>call: ... (ends at newline or <|tool_call_end|> or EOS)
+  text = text.replace(/<\|tool_call\|?>[^\n]*?(?:<\|tool_call_end\|>|$)/gm, "");
+  // Full <|tool_call_start|>...<|tool_call_end|> pairs
+  text = text.replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/g, "");
+  // Trailing partial markers mid-stream (e.g. token ended with "<|chan" so far)
+  text = text.replace(/<\|?[a-z_|]*$/i, "");
+  return text;
+}
+
 function queueSpeech(text) {
   const t = text.trim();
   if (!t) return;
@@ -236,11 +254,23 @@ function addMessage(role, text = "") {
 }
 
 function appendToAssistant(token) {
-  if (!currentAssistantMsg) currentAssistantMsg = addMessage("assistant", "");
-  currentAssistantMsg.textContent += token;
+  if (!currentAssistantMsg) {
+    currentAssistantMsg = addMessage("assistant", "");
+    currentAssistantMsg._rawBuffer = "";       // full stream including markers
+    currentAssistantMsg._lastVisible = "";     // what we've actually emitted
+  }
+  currentAssistantMsg._rawBuffer += token;
+  const visible = stripHiddenMarkers(currentAssistantMsg._rawBuffer);
+  currentAssistantMsg.textContent = visible;
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
-  sentenceBuffer += token;
-  flushSentenceBuffer(false);
+  // Only feed the NEW VISIBLE delta to TTS — never speak hidden markers
+  // or the thought channel aloud.
+  const delta = visible.slice(currentAssistantMsg._lastVisible.length);
+  currentAssistantMsg._lastVisible = visible;
+  if (delta) {
+    sentenceBuffer += delta;
+    flushSentenceBuffer(false);
+  }
 }
 
 function finishAssistant(finalText, stats) {

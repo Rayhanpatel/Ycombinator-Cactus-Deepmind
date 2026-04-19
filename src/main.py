@@ -467,6 +467,25 @@ class Session:
             m.pop("images", None)
             m.pop("audio", None)
 
+    def _strip_history_tool_messages(self) -> None:
+        """Remove `tool` role messages from completed turns.
+
+        A single query_kb result is ~1000-2000 tokens of JSON (part numbers,
+        procedures, safety notes across 3 KB hits). Keeping those messages
+        in self.messages means every subsequent turn's prefill re-processes
+        them — measured TTFT jumped from ~10s to 41s over a session as tool
+        results piled up. The tool result was fully consumed by the follow-up
+        pass inside THIS turn; future turns don't need it.
+
+        Only call AFTER run_turn's multi-pass loop finishes — during a turn,
+        pass 2 MUST see the tool result from pass 1.
+        """
+        before = len(self.messages)
+        self.messages = [m for m in self.messages if m.get("role") != "tool"]
+        dropped = before - len(self.messages)
+        if dropped:
+            logger.debug(f"Dropped {dropped} tool message(s) from history")
+
     # Keep the system prompt + the last N messages. Multi-turn coherence
     # needs SOME history, but unbounded growth blows up prefill time —
     # we measured TTFT going from ~4s to ~10s as turns accumulated.
@@ -658,8 +677,11 @@ class Session:
             final_text_len=len(final_text),
         )
         # Order matters: strip refs from history FIRST so next turn's prefill
-        # doesn't try to re-open files we're about to delete.
+        # doesn't try to re-open files we're about to delete. Then drop
+        # completed tool-role messages (they were fully consumed by the
+        # follow-up pass in this same turn and only bloat prefill from here on).
         self._strip_history_file_refs()
+        self._strip_history_tool_messages()
         self._trim_history()
         self.cleanup_turn_files()
 
@@ -771,6 +793,7 @@ async def ws_session(ws: WebSocket) -> None:
                 log_event("turn_error", sid=session.sid, error=str(turn_err), cause="model_crash")
                 session.pop_last_user_message()
                 session._strip_history_file_refs()
+                session._strip_history_tool_messages()
                 session.cleanup_turn_files()
                 engine.reset_and_rewarm()
                 await session.send({"type": "error", "message": f"Completion failed: {turn_err}"})

@@ -78,13 +78,28 @@ On the Mac that runs the Python server:
 brew install espeak-ng
 ```
 
-Then install Python dependencies in the environment you use for the app:
+Then install Python dependencies into the same Python environment that will run the server.
+
+This project assumes the server is started from `cactus/venv`, so install into that env explicitly:
 
 ```bash
-pip install -r requirements.txt
+cactus/venv/bin/pip install -r requirements.txt
 ```
 
 That installs the Rokid bridge and speech dependencies, including `aiortc`, Silero VAD, `faster-whisper`, and Kokoro.
+
+Do not rely on plain `pip install -r requirements.txt` unless `pip` already points at `cactus/venv`. If the server runs from one interpreter and the Rokid packages were installed into another, `POST /session` will fail with `503 Service Unavailable`.
+
+Optional verification from the repo root:
+
+```bash
+cactus/venv/bin/python -c "from src.main import rokid_bridge; import json; print(json.dumps(rokid_bridge.snapshot(), indent=2))"
+```
+
+Before you connect the glasses, that output should show:
+
+- `"available": true`
+- `"speech_backend_ready": true` after startup prewarm completes, or at least no import-related dependency error
 
 ### 2. Start the Mac server
 
@@ -93,8 +108,6 @@ From the repo root:
 ```bash
 cactus/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8000
 ```
-
-If you use a different Python environment, run the same module with that interpreter instead.
 
 When the server is up:
 
@@ -201,7 +214,8 @@ The HUD shows:
 
 ## Troubleshooting
 
-- If the glasses connect but there is no assistant speech, verify the Mac server started with the updated dependencies and `brew install espeak-ng` was run.
+- If `POST /session` returns `503 Service Unavailable`, the usual cause is that the Python env running the server is missing Rokid dependencies such as `aiortc` or `silero-vad`. Re-run `cactus/venv/bin/pip install -r requirements.txt`, then restart the server from `cactus/venv/bin/python`.
+- If the glasses connect but there is no assistant speech, verify `brew install espeak-ng` was run and check `/healthz` or the browser Rokid panel for `speech_backend_error`.
 - If the HUD says the backend URL is missing, check `rokid/local.properties`.
 - If the browser shows Rokid unavailable, inspect `/healthz` and the server logs for dependency errors.
 - If the glasses never connect, confirm the Mac and glasses are on the same reachable network and that the configured `BRIDGE_SESSION_URL` points to the Mac's actual LAN IP.

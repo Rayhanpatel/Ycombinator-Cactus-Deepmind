@@ -58,6 +58,75 @@ const MIN_UTTERANCE_CHARS = 4;   // reject transcripts shorter than this (backgr
 const speechQueue = [];
 let isSpeaking = false;
 let sentenceBuffer = "";
+let selectedVoice = null;   // chosen SpeechSynthesisVoice (or null = browser default)
+let allVoices = [];
+
+// Ordered preference for voice names. First name in the list that's actually
+// installed wins. Premium/Enhanced Apple voices top the list because they
+// sound the most natural; the generic Samantha/Alex are solid fallbacks.
+const VOICE_PRIORITY = [
+  "Ava (Premium)",
+  "Ava (Enhanced)",
+  "Evan (Premium)",
+  "Evan (Enhanced)",
+  "Samantha (Enhanced)",
+  "Serena (Premium)",
+  "Serena (Enhanced)",
+  "Allison (Premium)",
+  "Allison (Enhanced)",
+  "Google UK English Female",
+  "Google UK English Male",
+  "Samantha",
+  "Karen",
+  "Allison",
+  "Ava",
+  "Alex",
+];
+
+function pickBestVoice(voices) {
+  if (!voices || voices.length === 0) return null;
+  // Exact-name match on our priority list first.
+  for (const pref of VOICE_PRIORITY) {
+    const hit = voices.find(v => v.name === pref);
+    if (hit) return hit;
+  }
+  // Loose: any English voice whose name mentions Premium/Enhanced.
+  const enhanced = voices.find(v => /en[-_]/i.test(v.lang) && /(Premium|Enhanced)/i.test(v.name));
+  if (enhanced) return enhanced;
+  // Any en-US voice.
+  const enUS = voices.find(v => /en[-_]US/i.test(v.lang));
+  if (enUS) return enUS;
+  return voices[0];
+}
+
+function loadVoicesAndPick() {
+  allVoices = window.speechSynthesis.getVoices() || [];
+  selectedVoice = pickBestVoice(allVoices);
+  if (selectedVoice) {
+    console.log(`[tts] selected voice: ${selectedVoice.name} (${selectedVoice.lang})`);
+  }
+  // Populate the dropdown if it's there.
+  const sel = document.getElementById("voice-select");
+  if (sel && allVoices.length) {
+    sel.innerHTML = "";
+    allVoices
+      .filter(v => /^en/i.test(v.lang))
+      .forEach(v => {
+        const opt = document.createElement("option");
+        opt.value = v.name;
+        opt.textContent = `${v.name} · ${v.lang}${v.default ? " (default)" : ""}`;
+        if (selectedVoice && v.name === selectedVoice.name) opt.selected = true;
+        sel.appendChild(opt);
+      });
+  }
+}
+
+// Chrome loads voices asynchronously — the onvoiceschanged event fires once
+// they're ready. Load them again if the user returns to the tab.
+if ("speechSynthesis" in window) {
+  window.speechSynthesis.onvoiceschanged = loadVoicesAndPick;
+  loadVoicesAndPick();  // in case they're already cached
+}
 
 function splitBySentence(text) {
   if (window.Intl && Intl.Segmenter) {
@@ -90,7 +159,8 @@ function playNext() {
   }
   const sentence = speechQueue.shift();
   const u = new SpeechSynthesisUtterance(sentence);
-  u.rate = 1.05;
+  if (selectedVoice) u.voice = selectedVoice;
+  u.rate = 1.0;
   u.pitch = 1.0;
   u.onstart = () => {
     isSpeaking = true;
@@ -547,6 +617,24 @@ micBtn.addEventListener("click", toggleHandsFree);
 
 // ── Stop button: cancels in-flight generation ───────────────
 if (stopBtn) stopBtn.addEventListener("click", sendCancel);
+
+// ── Voice dropdown: override which SpeechSynthesis voice is used ────
+const voiceSelect = document.getElementById("voice-select");
+if (voiceSelect) {
+  voiceSelect.addEventListener("change", () => {
+    const pick = allVoices.find(v => v.name === voiceSelect.value);
+    if (pick) {
+      selectedVoice = pick;
+      console.log(`[tts] user picked voice: ${pick.name}`);
+      // Demo the new voice so the user hears the switch immediately.
+      const demo = new SpeechSynthesisUtterance("Voice set.");
+      demo.voice = pick;
+      demo.rate = 1.0;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(demo);
+    }
+  });
+}
 
 // ── boot ────────────────────────────────────────────────────
 connect();

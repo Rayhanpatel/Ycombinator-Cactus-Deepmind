@@ -40,6 +40,7 @@ const rokidControl = $("rokid-control");
 const rokidSpeech = $("rokid-speech");
 const rokidLastUser = $("rokid-last-user");
 const rokidLastAssistant = $("rokid-last-assistant");
+const rokidSpeechDebug = $("rokid-speech-debug");
 const rokidDisconnectBtn = $("rokid-disconnect");
 
 let ws;
@@ -353,6 +354,16 @@ function updateSession(state) {
   }
 }
 
+function formatRokidSpeechDebug(debug) {
+  if (!debug || typeof debug !== "object" || Object.keys(debug).length === 0) return "—";
+  return [
+    `prob ${debug.speech_prob ?? "?"} · rms ${debug.rms_dbfs ?? "?"} dBFS`,
+    `noise ${debug.noise_floor_dbfs ?? "?"} · gate ${debug.start_gate_dbfs ?? "?"}/${debug.end_gate_dbfs ?? "?"}`,
+    `speech ${debug.speech_ms ?? "?"} ms · silence ${debug.silence_ms ?? "?"} ms`,
+    `segments ${debug.speech_starts ?? 0}/${debug.speech_ends ?? 0} · utt ${debug.utterances_finalized ?? 0}`,
+  ].join("\n");
+}
+
 function updateRokidState(state) {
   if (!state) return;
   rokidConnection.textContent = state.connection_state || "idle";
@@ -361,6 +372,7 @@ function updateRokidState(state) {
   rokidSpeech.textContent = state.speech_state || "idle";
   rokidLastUser.textContent = state.last_user_text || "—";
   rokidLastAssistant.textContent = state.last_assistant_text || "—";
+  rokidSpeechDebug.textContent = formatRokidSpeechDebug(state.speech_debug);
 
   const examples = Array.isArray(state.session_url_examples) ? state.session_url_examples : [];
   rokidUrl.textContent = examples.length

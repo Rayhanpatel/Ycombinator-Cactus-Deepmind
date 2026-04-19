@@ -313,6 +313,12 @@ button.secondary {
   min-height: 16px;
 }
 
+.rokid-copy-body-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
 .tool-log {
   overflow-y: auto;
   display: flex;

@@ -162,6 +162,7 @@ The UI now has a dedicated Rokid panel that shows:
 - ICE state
 - control channel state
 - speech state
+- live speech debug metrics
 - latest Rokid preview stream
 - last transcribed user utterance
 - last assistant reply
@@ -216,6 +217,7 @@ The HUD shows:
 
 - If `POST /session` returns `503 Service Unavailable`, the usual cause is that the Python env running the server is missing Rokid dependencies such as `aiortc` or `silero-vad`. Re-run `cactus/venv/bin/pip install -r requirements.txt`, then restart the server from `cactus/venv/bin/python`.
 - If the glasses connect but there is no assistant speech, verify `brew install espeak-ng` was run and check `/healthz` or the browser Rokid panel for `speech_backend_error`.
+- If camera works but nothing is transcribed, watch the Rokid panel's `Speech debug` block or inspect `rokid.speech_debug` from `/healthz`. When you speak, `speech_prob` should rise and `speech_ms` should increase. After you stop, `silence_ms` should rise and an utterance should finalize. If needed, tune `ROKID_VAD_START_THRESHOLD`, `ROKID_VAD_END_THRESHOLD`, `ROKID_VAD_MIN_SILENCE_MS`, or `ROKID_AUDIO_GATE_MIN_DBFS` in the server environment.
 - If the HUD says the backend URL is missing, check `rokid/local.properties`.
 - If the browser shows Rokid unavailable, inspect `/healthz` and the server logs for dependency errors.
 - If the glasses never connect, confirm the Mac and glasses are on the same reachable network and that the configured `BRIDGE_SESSION_URL` points to the Mac's actual LAN IP.

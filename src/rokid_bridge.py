@@ -221,6 +221,7 @@ class RokidBridgeManager:
             "speech_state": "idle",
             "speech_backend_ready": False,
             "speech_backend_error": "",
+            "speech_debug": {},
             "last_user_text": "",
             "last_assistant_text": "",
             "tts_playing": False,
@@ -346,6 +347,7 @@ class RokidBridgeManager:
                 last_assistant_text="",
                 speech_backend_ready=self._speech_service.ready,
                 speech_backend_error=self._speech_service.error or "",
+                speech_debug={},
             )
         if self._speech_queue is not None:
             self._speech_worker = asyncio.create_task(self._speech_worker_loop(token, self._speech_queue))
@@ -533,18 +535,33 @@ class RokidBridgeManager:
 
     async def _consume_audio(self, track: MediaStreamTrack, session_token: int) -> None:
         frames_seen = 0
+        last_debug: dict[str, Any] = {}
         try:
             while True:
                 frame = await track.recv()
                 frames_seen += 1
                 if frames_seen % 25 == 0:
-                    await self._mutate_state(session_token=session_token, audio_frames_seen=frames_seen)
+                    await self._mutate_state(
+                        session_token=session_token,
+                        audio_frames_seen=frames_seen,
+                        speech_debug=last_debug,
+                    )
                 if self._speech_stream is None:
                     continue
                 pcm16_bytes, sample_rate = frame_to_mono_pcm16(frame)
                 result: FeedResult = self._speech_stream.feed_pcm16(pcm16_bytes, src_sr=sample_rate, channels=1)
+                last_debug = result.debug
                 if result.speech_started:
                     asyncio.create_task(self._handle_speech_start(session_token))
+                    await self._mutate_state(session_token=session_token, speech_debug=result.debug)
+                elif result.speech_ended or result.utterances:
+                    await self._mutate_state(
+                        session_token=session_token,
+                        speech_debug=result.debug,
+                        message=f"Speech finalized ({len(result.utterances)} utterance{'s' if len(result.utterances) != 1 else ''})",
+                    )
+                elif frames_seen % 25 == 0:
+                    await self._mutate_state(session_token=session_token, speech_debug=result.debug)
                 if self._speech_queue is not None:
                     for utterance in result.utterances:
                         await self._speech_queue.put(utterance)

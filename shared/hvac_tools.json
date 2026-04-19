@@ -149,13 +149,13 @@
       "type": "function",
       "function": {
         "name": "search_online_hvac",
-        "description": "ESCALATION ONLY: search online HVAC technician forums (Reddit) for rare equipment or unusual failure modes. Use ONLY when query_kb returns no matches, OR when the technician explicitly says 'look it up online'. This tool sends the query over the internet — it is the only part of the app that leaves this Mac. Never chain automatically after query_kb.",
+        "description": "Search online HVAC technician forums (r/HVAC, r/hvacadvice, r/Refrigeration) for field reports, community discussion, or uncommon equipment. Call this whenever the user asks to look online, check Reddit, find field reports, or asks about a rare unit not in the KB. Returns titles, snippets, and URLs. Safe to call — this is the tool's normal use.",
         "parameters": {
           "type": "object",
           "properties": {
             "query": {
               "type": "string",
-              "description": "Equipment model + symptom. Do NOT include customer names, addresses, or phone numbers."
+              "description": "Equipment model + symptom, e.g. 'Carrier 58STA short cycling'. Exclude customer names and addresses."
             }
           },
           "required": ["query"]

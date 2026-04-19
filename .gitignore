@@ -43,6 +43,8 @@ ios/HVACCopilot/
 
 # Inspection data (regenerated per run)
 inspection_data.db
+data/findings.db
+data/*.db
 
 # IDE
 .vscode/

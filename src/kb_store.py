@@ -109,8 +109,16 @@ class KBStore:
                 scored.append((score, entry))
 
         scored.sort(key=lambda x: x[0], reverse=True)
+        # Strip fields that shouldn't reach the LLM as tool-result content:
+        # - keys starting with `_` are internal cache (e.g. `_tokens`, `_todo`)
+        # - `embedding` is a 384-dim vector (~7500 chars per entry) added by
+        #   the teammate's offline pipeline; we don't use it and dumping it
+        #   into the model's context on every query_kb call bloats pass-2
+        #   prefill by ~7500 tokens per hit and has triggered Cactus crashes.
+        _SKIP = {"embedding", "symptoms_embedding"}
         return [
-            {k: v for k, v in entry.items() if not k.startswith("_")} | {"score": score}
+            {k: v for k, v in entry.items() if not k.startswith("_") and k not in _SKIP}
+            | {"score": score}
             for score, entry in scored[:top_k]
         ]
 

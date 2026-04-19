@@ -271,16 +271,27 @@ function connect() {
           // via ambient audio / echo pickup. Resume after assistant_end.
           suppressOnResult = true;
           stopRecognition();
+          if (turnT0 && !turnFirstTokenT) {
+            turnFirstTokenT = performance.now();
+            console.log(`first token @ ${((turnFirstTokenT - turnT0) / 1000).toFixed(2)}s`);
+          }
         }
         appendToAssistant(evt.token);
         break;
       case "tool_call":
+        console.log("tool_call:", evt.name, evt.arguments);
         toolEntry(evt);
         break;
       case "session":
         updateSession(evt.state);
         break;
       case "assistant_end":
+        if (turnT0) {
+          const total = ((performance.now() - turnT0) / 1000).toFixed(2);
+          console.log(`assistant_end @ ${total}s  ttft=${evt.ttft_ms}ms  decode=${evt.decode_tps}tok/s`);
+          console.groupEnd();
+          turnT0 = 0;
+        }
         finishAssistant(evt.text, { ttft_ms: evt.ttft_ms, decode_tps: evt.decode_tps });
         break;
       case "error":
@@ -301,6 +312,10 @@ function connect() {
   };
 }
 
+let turnNum = 0;
+let turnT0 = 0;
+let turnFirstTokenT = 0;
+
 function sendUtterance(text) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   const clean = (text || "").trim();
@@ -315,9 +330,17 @@ function sendUtterance(text) {
   if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
   suppressOnResult = true;
   stopRecognition();
+
+  turnNum += 1;
+  turnT0 = performance.now();
+  turnFirstTokenT = 0;
+  const hasImage = !!(videoStream && pendingFrameB64);
+  console.groupCollapsed(`🌵 turn ${turnNum} — ${hasImage ? "multimodal" : "text"} — "${clean.slice(0, 60)}"`);
+  console.log("send @", new Date().toISOString(), "hasImage:", hasImage);
+
   // If the camera is enabled, bundle the latest keyframe in a multimodal
   // message so Gemma 4 can reason over image + text in one forward pass.
-  if (videoStream && pendingFrameB64) {
+  if (hasImage) {
     ws.send(JSON.stringify({ type: "multimodal", content: clean, jpeg_b64: pendingFrameB64 }));
   } else {
     ws.send(JSON.stringify({ type: "text", content: clean }));

@@ -27,13 +27,14 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.cactus import cactus_init, cactus_complete, cactus_destroy, cactus_prefill, cactus_reset
 from src.config import cfg
 from src.findings_store import FindingsStore
 from src.kb_store import get_kb_store
+from src.session_log import log_event, log_file_path, log_file_name, recent_events, summary as log_summary
 from src.tools import HVACToolDispatcher, get_tools_json
 
 # ── Logging ──────────────────────────────────────────────────────
@@ -271,9 +272,17 @@ class EngineHandle:
                 get_tools_json(),
                 None,
             )
-            logger.info(f"System prompt prefilled in {time.time() - t0:.2f}s")
+            dur_ms = (time.time() - t0) * 1000
+            logger.info(f"System prompt prefilled in {dur_ms / 1000:.2f}s")
+            log_event(
+                "prefill_startup",
+                duration_ms=round(dur_ms, 1),
+                system_chars=len(SYSTEM_PROMPT),
+                tools_chars=len(get_tools_json()),
+            )
         except Exception as e:
             logger.warning(f"cactus_prefill skipped: {e}")
+            log_event("prefill_startup_error", error=str(e))
 
     def unload(self) -> None:
         if self._handle is not None:
@@ -333,6 +342,29 @@ async def healthz():
     })
 
 
+@app.get("/logs/summary")
+async def logs_summary():
+    return JSONResponse(log_summary())
+
+
+@app.get("/logs/recent")
+async def logs_recent(n: int = 100):
+    return JSONResponse({
+        "file": log_file_name(),
+        "events": recent_events(n),
+    })
+
+
+@app.get("/logs/download")
+async def logs_download():
+    path = log_file_path()
+    return FileResponse(
+        path=str(path),
+        media_type="application/x-ndjson",
+        filename=log_file_name(),
+    )
+
+
 # NOTE: static mount at "/" is added at the END of this file, AFTER the @app.websocket
 # route is registered, otherwise StaticFiles catches WebSocket scopes and errors with
 # AssertionError (scope["type"] == "http"). Do not reorder.
@@ -346,9 +378,12 @@ class Session:
 
     def __init__(self, ws: WebSocket) -> None:
         self.ws = ws
+        self.sid = hex(id(self))[-8:]  # short id for correlating log events
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.dispatcher = HVACToolDispatcher(findings_store=FindingsStore())
         self._temp_files: list[str] = []
+        self.turn_count = 0
+        self.connected_at = time.time()
 
     async def send(self, payload: dict[str, Any]) -> None:
         await self.ws.send_text(json.dumps(payload))
@@ -447,7 +482,7 @@ class Session:
         self.messages = [self.messages[0]]  # keep system prompt
         self.dispatcher = HVACToolDispatcher(findings_store=FindingsStore())
 
-    async def _complete_once(self) -> dict[str, Any]:
+    async def _complete_once(self, pass_idx: int = 0) -> dict[str, Any]:
         """Run one cactus_complete with token streaming to the client. Returns parsed JSON.
         Audio + images are carried inside self.messages via `audio` / `images` fields;
         we no longer thread raw PCM through the pcm_data parameter."""
@@ -456,6 +491,20 @@ class Session:
 
         def on_token(tok: str, _id: int) -> None:
             loop.call_soon_threadsafe(token_queue.put_nowait, tok)
+
+        last_msg = self.messages[-1] if self.messages else {}
+        has_audio = "audio" in last_msg and bool(last_msg.get("audio"))
+        has_image = "images" in last_msg and bool(last_msg.get("images"))
+
+        t_start = time.time()
+        log_event(
+            "complete_start",
+            sid=self.sid,
+            pass_idx=pass_idx,
+            msg_count=len(self.messages),
+            has_audio=has_audio,
+            has_image=has_image,
+        )
 
         async with engine.lock:
             task = loop.run_in_executor(
@@ -479,10 +528,30 @@ class Session:
                 await self.send({"type": "token", "token": token_queue.get_nowait()})
             raw = await task
 
+        wall_ms = (time.time() - t_start) * 1000
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
         except json.JSONDecodeError:
+            log_event("complete_end", sid=self.sid, pass_idx=pass_idx, wall_ms=round(wall_ms, 1), error="bad_json")
             return {"response": "", "function_calls": []}
+
+        log_event(
+            "complete_end",
+            sid=self.sid,
+            pass_idx=pass_idx,
+            wall_ms=round(wall_ms, 1),
+            ttft_ms=parsed.get("time_to_first_token_ms"),
+            total_ms=parsed.get("total_ms"),
+            decode_tps=parsed.get("decode_tps"),
+            prefill_tps=parsed.get("prefill_tps"),
+            prefill_tokens=parsed.get("prefill_tokens"),
+            decode_tokens=parsed.get("decode_tokens"),
+            ram_usage_mb=parsed.get("ram_usage_mb"),
+            response_len=len(parsed.get("response") or ""),
+            n_function_calls=len(parsed.get("function_calls") or []),
+            cloud_handoff=parsed.get("cloud_handoff"),
+        )
+        return parsed
 
     async def _dispatch_calls(self, function_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Execute a batch of function calls and stream tool_call events. Returns tool role messages."""
@@ -495,11 +564,21 @@ class Session:
                     args = json.loads(args)
                 except json.JSONDecodeError:
                     args = {}
+            t0 = time.time()
             result_json = self.dispatcher.execute(name, args)
+            exec_ms = (time.time() - t0) * 1000
             try:
                 result_parsed = json.loads(result_json)
             except json.JSONDecodeError:
                 result_parsed = {"raw": result_json}
+            log_event(
+                "tool_call",
+                sid=self.sid,
+                name=(name or "").strip(),
+                args_preview=json.dumps(args, default=str)[:120],
+                result_preview=json.dumps(result_parsed, default=str)[:200],
+                exec_ms=round(exec_ms, 2),
+            )
             tool_messages.append({
                 "role": "tool",
                 "content": json.dumps({"name": name, "content": result_json}),
@@ -518,12 +597,16 @@ class Session:
         capped at max_passes so a runaway model can't spin. Streams tokens to the client.
         Any audio/image files registered for this turn are cleaned up at the end.
         """
+        self.turn_count += 1
+        turn_t0 = time.time()
         final_text = ""
         ttft: float | None = None
         decode_tps: float | None = None
+        passes_done = 0
 
         for pass_idx in range(max_passes):
-            result = await self._complete_once()
+            passes_done = pass_idx + 1
+            result = await self._complete_once(pass_idx=pass_idx)
 
             assistant_text = result.get("response", "") or ""
             function_calls = result.get("function_calls") or []
@@ -554,6 +637,15 @@ class Session:
             "ttft_ms": ttft,
             "decode_tps": decode_tps,
         })
+        log_event(
+            "turn_end",
+            sid=self.sid,
+            turn_idx=self.turn_count,
+            passes=passes_done,
+            total_ms=round((time.time() - turn_t0) * 1000, 1),
+            history_len=len(self.messages),
+            final_text_len=len(final_text),
+        )
         # Order matters: strip refs from history FIRST so next turn's prefill
         # doesn't try to re-open files we're about to delete.
         self._strip_history_file_refs()
@@ -565,7 +657,8 @@ class Session:
 async def ws_session(ws: WebSocket) -> None:
     await ws.accept()
     session = Session(ws)
-    logger.info("WS connected")
+    logger.info(f"WS connected sid={session.sid}")
+    log_event("ws_connect", sid=session.sid)
     try:
         await session.send({"type": "ready", "kb_entries": get_kb_store().entry_count})
 
@@ -578,6 +671,14 @@ async def ws_session(ws: WebSocket) -> None:
                 continue
 
             kind = msg.get("type")
+            log_event(
+                "msg_in",
+                sid=session.sid,
+                msg_type=kind,
+                text_len=len(msg.get("content") or ""),
+                has_audio=bool(msg.get("pcm_b64")),
+                has_image=bool(msg.get("jpeg_b64")),
+            )
 
             # Per-message try so one bad turn (empty audio, model crash) can't
             # kill the whole WS loop. Every branch MUST go through here.
@@ -633,6 +734,7 @@ async def ws_session(ws: WebSocket) -> None:
                 # not a model crash. No state to clean up — add_user_multimodal
                 # throws before appending.
                 logger.info(f"Rejected turn: {ve}")
+                log_event("turn_error", sid=session.sid, error=str(ve), cause="guard_rail")
                 await session.send({"type": "error", "message": str(ve)})
                 await session.send({"type": "assistant_end", "text": ""})
 
@@ -642,6 +744,7 @@ async def ws_session(ws: WebSocket) -> None:
                 # reset the KV cache, and let the user try again without
                 # reconnecting.
                 logger.exception(f"Turn failed: {turn_err}")
+                log_event("turn_error", sid=session.sid, error=str(turn_err), cause="model_crash")
                 session.pop_last_user_message()
                 session._strip_history_file_refs()
                 session.cleanup_turn_files()
@@ -650,9 +753,16 @@ async def ws_session(ws: WebSocket) -> None:
                 await session.send({"type": "assistant_end", "text": ""})
 
     except WebSocketDisconnect:
-        logger.info("WS disconnected")
+        logger.info(f"WS disconnected sid={session.sid}")
+        log_event(
+            "ws_disconnect",
+            sid=session.sid,
+            duration_s=round(time.time() - session.connected_at, 1),
+            turn_count=session.turn_count,
+        )
     except Exception as e:
         logger.exception(f"WS error: {e}")
+        log_event("ws_error", sid=session.sid, error=str(e))
         try:
             await session.send({"type": "error", "message": str(e)})
         except Exception:

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"/Users/dag3ntl3man/YC/YC-26'/Ycombinator-Cactus-Deepmind\" branch --show-current)",
+      "Bash(ls demo *)",
+      "Bash(ls scripts *)",
+      "Bash(ls src *)",
+      "Bash(ls shared *)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git rebase *)",
+      "Bash(python -m pytest tests/test_web_ranker.py -q)",
+      "Bash(pip install *)"
+    ]
+  }
+}

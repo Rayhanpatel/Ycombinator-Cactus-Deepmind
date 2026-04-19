@@ -63,7 +63,7 @@ SYSTEM_PROMPT = (
     "CALL flag_scope_change.\n"
     "5. When the tech says they're done ('job's finished', 'cooling is normal', 'unit's running'), CALL close_job.\n\n"
     "Tools available:\n"
-    "  • query_kb(query, equipment_model?) — search 10 curated HVAC cases for the top match.\n"
+    "  • query_kb(query, equipment_model?) — search the curated HVAC KB for the top match.\n"
     "  • log_finding(location, issue, severity, part_number?, notes?)\n"
     "  • flag_safety(hazard, immediate_action, level)\n"
     "  • flag_scope_change(original_scope, new_scope, reason, estimated_extra_time_minutes?)\n"

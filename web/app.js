@@ -653,13 +653,17 @@ camBtn.addEventListener("click", async () => {
 
 function captureKeyframe() {
   if (!videoStream || camEl.videoWidth === 0) return;
-  // 224px wide is roughly what Gemma 4's vision encoder is trained on; going
-  // larger just spends more vision tokens without extra recognition quality.
-  camCanvas.width = 224;
+  // 448px gives Gemma 4's vision encoder enough resolution to OCR product
+  // labels (e.g. "MOVINCOOL CLIMATE PRO X14") when the camera is ~1 ft from
+  // the unit. 224px worked for room-level description but was too coarse for
+  // badge text. Cost: ~500 vision tokens per image instead of ~256 → adds
+  // roughly 1 s of TTFT on multimodal turns on M4 Pro CPU. Worth it for
+  // live-demo model-reading of real HVAC equipment.
+  camCanvas.width = 448;
   camCanvas.height = Math.round(camCanvas.width * (camEl.videoHeight / camEl.videoWidth));
   const ctx = camCanvas.getContext("2d");
   ctx.drawImage(camEl, 0, 0, camCanvas.width, camCanvas.height);
-  pendingFrameB64 = camCanvas.toDataURL("image/jpeg", 0.6);
+  pendingFrameB64 = camCanvas.toDataURL("image/jpeg", 0.7);
 }
 
 // ── Mic toggle: click to start/stop hands-free ─────────────

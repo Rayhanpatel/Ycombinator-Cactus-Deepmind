@@ -37,7 +37,7 @@ web/
 └── styles.css
 
 shared/hvac_tools.json   # Frozen tool schemas (5 tools, OpenAI function format)
-kb/                      # 10 curated HVAC entries (Carrier, Trane, Lennox, …)
+kb/                      # 18 curated HVAC entries across 15 brands (Carrier, Trane, Lennox, Goodman, Rheem, York, American Standard, Bryant, Mitsubishi, MovinCool, …)
 demo/                    # 3 pre-baked demo scripts (capacitor, gas smell, scope change)
 tests/
 ├── test_tools.py        # 13 passing tests for the HVAC dispatcher
@@ -52,7 +52,7 @@ Internal_docs/           # idea.md (vision), build_plan.md, conversation history
 
 Each tool's schema lives in [shared/hvac_tools.json](shared/hvac_tools.json) and is dispatched by [src/tools.py](src/tools.py):
 
-- **`query_kb(query, equipment_model?)`** — keyword-scored search over the 10 KB entries
+- **`query_kb(query, equipment_model?)`** — keyword-scored search over the 18 KB entries (dual-schema tolerant)
 - **`log_finding(location, issue, severity, part_number?, notes?)`** — records a diagnosed problem
 - **`flag_safety(hazard, immediate_action, level)`** — level=`stop` halts the session, fires the red banner in the UI
 - **`flag_scope_change(original_scope, new_scope, reason, estimated_extra_time_minutes?)`**
@@ -106,15 +106,20 @@ cactus/venv/bin/python -m pytest tests/test_tools.py -v
 
 ## Measured performance
 
-On MacBook Pro M4 Pro (CPU, no ANE):
+On MacBook Pro M4 Pro (CPU, no ANE — Cactus hasn't published an ANE-compiled `model.mlpackage` for Gemma 4 E4B yet):
 
-| Metric | Value |
+| Metric | Value (measured from session logs) |
 |---|---|
-| Model load | ~5.8 s (one-time) |
-| Time to first token | 217–233 ms |
-| Decode speed | 28–29 tok/s |
-| Confidence (text completions) | 0.97 |
-| KB retrieval (10 entries) | <1 ms |
+| Model load | ~4–6 s (one-time at server start) |
+| Time to first token — bare model, no tools | ~217 ms ([test_gemma4.py](test_gemma4.py) baseline) |
+| Time to first token — full HVAC system (tools + system prompt + history) | ~3.9–4.5 s |
+| Decode speed | ~17 tok/s (with the 5-tool schema loaded) |
+| Prefill tokens per turn (text, no image) | ~935 |
+| Prefill tokens per turn (with camera keyframe at 448 px) | ~1400 |
+| KB retrieval over 18 entries | <1 ms |
+| [tests/smoke_hvac.py](tests/smoke_hvac.py) 8-case benchmark | 7/8 tool-match, 7/8 arg-match |
+
+The bare-model 217 ms baseline is what Cactus reports when only a short system prompt + user message are prefilled. In the HVAC app we pay the cost of 5 tool schemas + a rules-heavy system prompt + accumulated turn history, which is what drags TTFT to ~4 s. Trimming that context was attempted and rolled back; the trade-offs aren't worth it for this demo.
 
 ## Architecture
 

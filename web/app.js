@@ -454,7 +454,9 @@ function connect() {
               console.log(`first token @ ${((turnFirstTokenT - turnT0) / 1000).toFixed(2)}s`);
             }
           }
-          appendToAssistant(evt.token, { speak });
+          if (source !== "rokid") {
+            appendToAssistant(evt.token, { speak });
+          }
         }
         break;
       case "tool_call":

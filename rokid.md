@@ -204,7 +204,8 @@ The HUD shows:
 
 - The glasses microphone is always-on from the app side.
 - The Mac server decides turn boundaries with VAD.
-- When speech starts while the assistant is talking, the server treats it as barge-in and stops current TTS/generation before processing the new utterance.
+- Once a Rokid utterance starts a Gemma turn, additional Rokid speech is ignored until the assistant finishes thinking and speaking the reply.
+- This is intentional in the current app: Rokid mode favors single-turn stability over barge-in so the server does not keep canceling and restarting Gemma.
 - Assistant replies are played on the Rokid speaker.
 - If the browser UI is open, it also receives the same assistant events.
 

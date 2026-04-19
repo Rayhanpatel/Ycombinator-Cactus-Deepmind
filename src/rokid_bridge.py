@@ -293,6 +293,7 @@ class RokidBridgeManager:
             "speech_backend_ready": False,
             "speech_backend_error": "",
             "speech_debug": {},
+            "ignored_utterances_while_busy": 0,
             "last_user_text": "",
             "last_assistant_text": "",
             "tts_playing": False,
@@ -424,6 +425,7 @@ class RokidBridgeManager:
                 speech_backend_ready=self._speech_service.ready,
                 speech_backend_error=self._speech_service.error or "",
                 speech_debug={},
+                ignored_utterances_while_busy=0,
             )
         if self._speech_queue is not None:
             self._speech_worker = asyncio.create_task(self._speech_worker_loop(token, self._speech_queue))
@@ -540,25 +542,38 @@ class RokidBridgeManager:
         await self._mutate_state(session_token=session_token, message=f"Wearable message: {message_type or message[:80]}")
 
     async def _handle_speech_start(self, session_token: int) -> None:
-        self._stop_tts_output()
-        if self.runtime.is_generating:
-            asyncio.create_task(self.runtime.cancel_current_turn())
         await self._mutate_state(
             session_token=session_token,
             speech_state="listening",
-            tts_playing=False,
             status_text="Listening…",
             message="Speech detected",
         )
         with suppress(Exception):
             await self.send_control({"type": "status", "text": "Listening…"})
 
+    def _assistant_busy(self) -> bool:
+        return self.runtime.is_generating or bool(self._state.get("tts_playing"))
+
     async def _speech_worker_loop(self, session_token: int, queue: asyncio.Queue[FinalizedUtterance]) -> None:
         while True:
             utterance = await queue.get()
             try:
+                if self._assistant_busy():
+                    await self._mutate_state(
+                        session_token=session_token,
+                        ignored_utterances_while_busy=int(self._state.get("ignored_utterances_while_busy", 0)) + 1,
+                        message="Ignored utterance while assistant busy",
+                    )
+                    continue
                 text = await asyncio.to_thread(self._speech_service.transcribe, utterance.audio)
                 if not text:
+                    continue
+                if self._assistant_busy():
+                    await self._mutate_state(
+                        session_token=session_token,
+                        ignored_utterances_while_busy=int(self._state.get("ignored_utterances_while_busy", 0)) + 1,
+                        message="Ignored transcribed utterance while assistant busy",
+                    )
                     continue
                 async with self._state_lock:
                     assistant_jpeg = self._assistant_jpeg
@@ -572,7 +587,7 @@ class RokidBridgeManager:
                 with suppress(Exception):
                     await self.send_control({"type": "status", "text": "Thinking…"})
                     await self.send_control({"type": "display_text", "text": hud_text(text)})
-                await self.runtime.submit_rokid_turn(text, jpeg_bytes=assistant_jpeg, interrupt=True)
+                await self.runtime.submit_rokid_turn(text, jpeg_bytes=assistant_jpeg, interrupt=False)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -612,6 +627,7 @@ class RokidBridgeManager:
     async def _consume_audio(self, track: MediaStreamTrack, session_token: int) -> None:
         frames_seen = 0
         last_debug: dict[str, Any] = {}
+        busy_drop_active = False
         try:
             while True:
                 frame = await track.recv()
@@ -635,6 +651,22 @@ class RokidBridgeManager:
                             audio_input_sample_rate=audio_meta.get("frame_sample_rate", 0),
                         )
                     continue
+                if self._assistant_busy():
+                    if not busy_drop_active:
+                        self._speech_stream.reset()
+                        last_debug = {}
+                        busy_drop_active = True
+                    if frames_seen % 25 == 0:
+                        await self._mutate_state(
+                            session_token=session_token,
+                            audio_input_format=audio_meta.get("frame_format", ""),
+                            audio_input_layout=audio_meta.get("frame_layout", ""),
+                            audio_input_channels=audio_meta.get("frame_channels", 0),
+                            audio_input_sample_rate=audio_meta.get("frame_sample_rate", 0),
+                            speech_debug=last_debug,
+                        )
+                    continue
+                busy_drop_active = False
                 result: FeedResult = self._speech_stream.feed_pcm16(pcm16_bytes, src_sr=sample_rate, channels=1)
                 last_debug = result.debug
                 if result.speech_started:

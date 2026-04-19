@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HVAC Copilot — On-Device</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header>
+  <h1>🌵 HVAC Copilot</h1>
+  <div id="status" class="status">connecting…</div>
+  <div class="subtitle">
+    <span id="model-badge">Gemma 4 E4B · Cactus · on-device</span>
+    <span id="kb-badge"></span>
+    <span id="ttft-badge"></span>
+  </div>
+</header>
+
+<div id="safety-banner" class="safety-banner hidden">
+  <div class="safety-title">⚠️ STOP WORK — SAFETY ALERT</div>
+  <div id="safety-detail"></div>
+</div>
+
+<main>
+  <section id="transcript-pane" class="pane">
+    <h2>Transcript</h2>
+    <div id="transcript" class="transcript"></div>
+    <form id="composer" class="composer">
+      <button type="button" id="mic-btn" class="mic-btn" title="Push-to-talk">🎙️</button>
+      <input id="text-input" type="text" placeholder="Type a message (or hold the mic)…" autocomplete="off" />
+      <button type="submit" id="send-btn">Send</button>
+    </form>
+  </section>
+
+  <aside class="side">
+    <section class="pane">
+      <h2>Camera</h2>
+      <div class="camera-wrap">
+        <video id="cam" autoplay muted playsinline></video>
+        <canvas id="cam-canvas" class="hidden"></canvas>
+        <button type="button" id="cam-btn" class="secondary">Enable camera</button>
+      </div>
+    </section>
+
+    <section class="pane">
+      <h2>Tool activity</h2>
+      <div id="tool-log" class="tool-log"></div>
+    </section>
+
+    <section class="pane">
+      <h2>Session</h2>
+      <div id="session" class="session">
+        <div class="session-row"><span>Findings</span><span id="findings-count">0</span></div>
+        <div class="session-row"><span>Safety alerts</span><span id="safety-count">0</span></div>
+        <div class="session-row"><span>Scope changes</span><span id="scope-count">0</span></div>
+      </div>
+      <details id="session-details">
+        <summary>Full session JSON</summary>
+        <pre id="session-json">{}</pre>
+      </details>
+      <button type="button" id="reset-btn" class="secondary">Reset session</button>
+    </section>
+  </aside>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

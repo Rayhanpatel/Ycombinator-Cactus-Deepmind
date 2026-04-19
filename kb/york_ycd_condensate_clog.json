@@ -1,0 +1,27 @@
+{
+  "id": "york-ycd-condensate-clog",
+  "brand": "York",
+  "model": "YCD300",
+  "equipment_type": "package-unit",
+  "symptom": "Water pooling under or near the indoor air handler / furnace cabinet. System may still be cooling. Possible musty smell. Customer noticed a wet ceiling stain if unit is in an attic.",
+  "diagnosis": "Clogged condensate drain line. Algae or dust buildup in the PVC drain blocks gravity flow; the drain pan overflows through the safety switch port or the side seam of the pan.",
+  "part_number": null,
+  "procedure": [
+    "Turn off the unit at the thermostat (condensate pump shouldn't run dry).",
+    "Locate the primary condensate drain line (usually 3/4-inch PVC exiting the cabinet).",
+    "Find the cleanout tee — the capped vertical PVC stub.",
+    "Option A: wet/dry shop vac on the outdoor drain termination for 60-90 seconds. This pulls the clog out 90% of the time.",
+    "Option B: pour 1 cup distilled white vinegar into the cleanout, let sit 10 min, then flush with water.",
+    "Confirm flow at the outdoor termination. Water should run freely.",
+    "Empty the drain pan with a sponge or shop vac if overflow pooled inside the cabinet.",
+    "Reset the float safety switch if installed (usually a small cylinder in the drain line).",
+    "Recommend quarterly vinegar maintenance and consider a condensate pump with integrated safety switch."
+  ],
+  "safety_notes": [
+    "Water + electricity near the air handler blower motor = shock risk. Confirm power is off at the disconnect before reaching into a wet cabinet.",
+    "Attic units: floor joists can be rot-compromised by prolonged leaks. Test load-bearing before kneeling.",
+    "Biological growth in drain pans (mold / bacteria) — wear gloves and an N95 if the pan is heavily contaminated."
+  ],
+  "estimated_minutes": 30,
+  "tags": ["water leak", "condensate", "drain clog", "algae", "pan overflow", "YCD", "york", "mold"]
+}

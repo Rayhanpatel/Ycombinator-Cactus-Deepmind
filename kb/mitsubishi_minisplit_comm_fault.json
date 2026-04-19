@@ -1,0 +1,27 @@
+{
+  "id": "mitsubishi-minisplit-comm-fault",
+  "brand": "Mitsubishi",
+  "model": "MSZ-GL15NA",
+  "equipment_type": "mini-split",
+  "symptom": "Indoor head is blinking an error pattern on the operation LED (common: 2 blinks then pause, or 6 blinks). Unit won't start cooling or heating. Remote commands ignored or only briefly accepted.",
+  "diagnosis": "Communication fault between indoor and outdoor units. Most often: damaged interconnecting wire (S1/S2/S3), loose terminal block screw, or polarity-reversed connection after a prior install/service.",
+  "part_number": null,
+  "procedure": [
+    "Read the blink code from the indoor head LED. Reference the service manual: 2 blinks = indoor/outdoor comm, 6 = outdoor PCB fault, 11 = voltage problem.",
+    "Kill power to both the indoor disconnect and the outdoor disconnect.",
+    "Remove the indoor head's bottom cover to access the terminal block.",
+    "Verify S1, S2, S3 wires match at both ends — S1 to S1, S2 to S2, S3 to S3. Reversed polarity is a common installer mistake.",
+    "Check each terminal screw for tightness; loose screws arc and degrade over time.",
+    "Inspect the interconnect cable for pinches, rodent damage, or UV degradation. Mini-splits run cable outdoors — sun damage is common on installs >5 years old.",
+    "Measure DC voltage between S2 and S3 with power on: should be 17-32 VDC pulsing. Zero volts = outdoor board dead or cable open. Steady volts = indoor board not handshaking.",
+    "If cable suspect: replace the full run with 14/4 stranded cable, properly strain-relieved at both ends.",
+    "If boards suspect: call manufacturer tech line with serial and blink code before quoting parts — boards are $400+ and warranty may apply."
+  ],
+  "safety_notes": [
+    "Mini-split comm voltages are low (17-32V DC) but the line-voltage feeding each unit is 208-240V AC. Never work on the terminal block with either disconnect on.",
+    "Outdoor condensing units have capacitors that hold charge for minutes after power-off.",
+    "Many Mitsubishi models use R32 refrigerant which is mildly flammable — do not work with open flame or sparking tools near an open refrigerant circuit."
+  ],
+  "estimated_minutes": 45,
+  "tags": ["error code", "blinking light", "communication fault", "mini split", "S1 S2 S3", "wiring", "mitsubishi", "MSZ-GL"]
+}

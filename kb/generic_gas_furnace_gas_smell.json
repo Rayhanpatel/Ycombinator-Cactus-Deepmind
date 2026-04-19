@@ -1,0 +1,24 @@
+{
+  "id": "generic-gas-furnace-gas-smell",
+  "brand": "Other",
+  "model": "any-gas-furnace",
+  "equipment_type": "furnace",
+  "symptom": "Rotten-egg or sulfur smell near a gas furnace, water heater, or gas line. Customer may report headaches or dizziness if the smell has persisted. Hissing sound possible but not required.",
+  "diagnosis": "Natural gas leak. This is a life-safety event, not a repair. The mercaptan additive in natural gas smells like rotten eggs at concentrations well below flammability — if you smell it, concentration is significant.",
+  "part_number": null,
+  "procedure": [
+    "DO NOT touch any electrical switches, plug or unplug anything, or use a lighter / flame / sparking tool. Static discharge can ignite a gas-air mixture.",
+    "Evacuate occupants immediately. Move upwind if outdoors, or to the opposite end of the building if indoors.",
+    "From a SAFE distance (across the street or 50+ feet away), call the gas utility emergency line. In the US this is typically 911 or the utility's 24/7 leak line.",
+    "Do not return to the building until the utility responder has tested with a combustible-gas indicator and declared it safe.",
+    "Once cleared: the tech may investigate the leak source (flare fitting, old black-iron union, cracked heat exchanger). Never reopen the gas valve without a manometer leak test showing pressure hold.",
+    "Document the event in the service record. If a heat exchanger crack is the source, the furnace must be red-tagged and replaced — not patched."
+  ],
+  "safety_notes": [
+    "This is the ONE KB entry where the correct action is to stop working and evacuate. The app MUST call flag_safety with level='stop' the moment gas smell is reported.",
+    "Carbon monoxide is odorless — a gas smell ≠ CO. Both can be present. If anyone feels dizzy, nauseous, or has a headache, treat it as CO exposure and seek fresh air + medical attention.",
+    "Never use a match or lighter to 'find' a gas leak. People have died."
+  ],
+  "estimated_minutes": 0,
+  "tags": ["gas leak", "safety", "evacuate", "mercaptan", "rotten egg", "emergency", "stop work"]
+}

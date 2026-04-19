@@ -1,0 +1,27 @@
+{
+  "id": "bryant-123a-fan-limit-switch",
+  "brand": "Bryant",
+  "model": "123ANA036",
+  "equipment_type": "furnace",
+  "symptom": "Blower fan runs continuously and won't turn off, even when thermostat is set to Off or the call for heat/cool has ended. Room is getting cold from recirculated unheated air. No burner activity.",
+  "diagnosis": "Stuck fan limit switch (snap-disc). The bimetal disc has welded closed or the switch body has failed, so the fan circuit is permanently energized. Alternatively: stuck fan relay on the control board.",
+  "part_number": "HH18HA494",
+  "procedure": [
+    "Move the thermostat fan setting from Auto to On, then back to Auto. If the fan obeys On but not Auto, it's likely a limit-switch or board issue, not a wiring fault.",
+    "Kill power at the furnace disconnect.",
+    "Remove the blower compartment cover.",
+    "Locate the fan limit switch (small round or rectangular snap-disc, usually mounted in the supply plenum with 2 wires).",
+    "Disconnect the two limit-switch wires and cap them safely.",
+    "Restore power. If the fan stops: limit switch is bad, replace with HH18HA494 or OEM match.",
+    "If the fan still runs: the fault is on the control board — the fan relay is welded. Replace the board.",
+    "Install the new limit switch in the same orientation (label side out), reconnect wires, and test.",
+    "Verify fan cycles correctly on a complete heat call: burners light → 60-90s delay → fan on → burners off → fan runs 90-120s → fan off."
+  ],
+  "safety_notes": [
+    "A fan that won't turn off is a symptom, not a safety hazard on its own — but a furnace with welded limit controls CAN overheat if the heat-exchanger limit also fails. Inspect the high-limit switch too.",
+    "Never bypass (jumper out) a limit switch as a 'fix' — this removes the safety that prevents heat-exchanger overheating.",
+    "Control boards can retain voltage for 30-60s after power-off. Wait before touching board components."
+  ],
+  "estimated_minutes": 40,
+  "tags": ["fan won't stop", "blower", "limit switch", "snap disc", "control board", "furnace", "123A", "bryant"]
+}

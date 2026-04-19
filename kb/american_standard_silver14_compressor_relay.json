@@ -1,0 +1,27 @@
+{
+  "id": "american-standard-silver14-compressor-relay",
+  "brand": "American Standard",
+  "model": "Silver 14 4A7A4024",
+  "equipment_type": "ac-condenser",
+  "symptom": "Outdoor fan is spinning but the compressor is not running. No cold air at the supply vents. Suction line is at ambient temp, not cold. Unit sounds normal otherwise.",
+  "diagnosis": "Failed compressor start relay (hard-start kit) or failed run capacitor. The fan is on its own circuit through the contactor — it spins independently of the compressor circuit, which is why fan alone running masks a compressor fault.",
+  "part_number": "RCD-5",
+  "procedure": [
+    "Kill power at disconnect. Verify with meter.",
+    "Open the control panel. Identify the contactor — large black relay with T1/T2 terminals.",
+    "Confirm 24V control signal is present at the contactor coil when the thermostat calls for cool (use a helper or a wireless thermostat).",
+    "Check the run capacitor first — it fails more often than the start relay. Discharge, measure capacitance. Spec is on the cap label.",
+    "If cap is good: test the start relay continuity. Should read closed between terminals 1 and 2 when energized.",
+    "Replace with RCD-5 hard-start kit if the original had one, OR a matched OEM start relay.",
+    "Wire per the diagram stuck to the service panel cover. Yellow to start terminal, purple to common.",
+    "Restore power, thermostat to cool, observe compressor starts within 2-3 seconds of contactor pulling in.",
+    "Verify suction line gets cold within 30 seconds."
+  ],
+  "safety_notes": [
+    "Fan-only operation for >15 minutes can freeze the evaporator coil in humid conditions — turn the thermostat off until diagnosis is complete.",
+    "Start relay contacts arc under load — inspect for pitting before reusing.",
+    "Hard-start kits store charge like capacitors. Discharge before handling."
+  ],
+  "estimated_minutes": 35,
+  "tags": ["compressor won't start", "fan only", "start relay", "hard start", "run capacitor", "Silver 14", "american standard"]
+}

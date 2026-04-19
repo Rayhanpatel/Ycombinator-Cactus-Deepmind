@@ -1,0 +1,25 @@
+{
+  "id": "goodman-gsx14-low-refrigerant",
+  "brand": "Goodman",
+  "model": "GSX140421",
+  "equipment_type": "ac-condenser",
+  "symptom": "Weak cooling, supply vents noticeably warmer than usual. Ice visible on the suction (larger) copper line near the outdoor unit. Compressor runs continuously without satisfying thermostat.",
+  "diagnosis": "Low refrigerant charge, almost always caused by a leak in the evaporator coil, line set, or service valve. Running low refrigerant damages the compressor — must not be topped off without leak search.",
+  "part_number": null,
+  "procedure": [
+    "Confirm with gauge set: measure suction and liquid line pressures, compare against charge-by-superheat / subcooling targets on the unit's nameplate.",
+    "Inspect the visible line set for oil traces — refrigerant carries oil, so any leak leaves a residue.",
+    "Electronic leak detector sweep at the service valves, coil U-bends, and line-set flare fittings.",
+    "If coil leak confirmed: quote coil replacement OR full system replacement based on age.",
+    "If line-set leak: braze repair, pressure test with nitrogen, evacuate to <500 microns, recharge by weight.",
+    "Do NOT top off without finding the leak — EPA violation and the problem returns in weeks.",
+    "After repair: run the system and confirm superheat/subcooling back in spec."
+  ],
+  "safety_notes": [
+    "R410A is high-pressure (~400 psi). Gauges, hoses, and recovery tank must be rated for it.",
+    "EPA Section 608 certification required for any refrigerant work.",
+    "Ice on the suction line means the coil is below freezing — do not disconnect lines until fully thawed, or you'll get a liquid slug."
+  ],
+  "estimated_minutes": 90,
+  "tags": ["low refrigerant", "leak", "ice", "suction line", "weak cooling", "GSX14", "goodman", "r410a"]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "rheem-ra14-breaker-trip",
+  "brand": "Rheem",
+  "model": "RA1436AJ1NA",
+  "equipment_type": "ac-condenser",
+  "symptom": "Breaker trips within seconds of the unit trying to start. Customer has already reset it once or twice. No cooling. Possible faint burnt-electrical smell near the disconnect or contactor.",
+  "diagnosis": "Three likely root causes in order: (1) shorted compressor windings, (2) shorted wire rubbed through inside the cabinet, (3) failed start capacitor causing locked-rotor current draw.",
+  "part_number": null,
+  "procedure": [
+    "Kill power at disconnect AND breaker. Verify both with a meter.",
+    "Inspect the contactor and all internal wiring for burn marks or melted insulation. Any melted jacket = found it, replace that wire.",
+    "Test compressor windings with a multimeter: measure ohms between C-R, C-S, R-S. Compare to nameplate values (typically C-R ~1-3Ω, R-S ~2-5Ω, C-R + R-S should equal C-S within 5%).",
+    "Test winding-to-ground: each terminal to compressor shell should read open (infinite). Any continuity = shorted to ground = dead compressor.",
+    "If compressor passes: swap the start capacitor and retry. If breaker holds, old cap was the cause.",
+    "If compressor is shorted: quote replacement (3-5 hours, refrigerant recovery required) or recommend full system if unit is >10 years old.",
+    "NEVER reset the breaker more than twice. Repeated tripping welds contactor points and can start a fire."
+  ],
+  "safety_notes": [
+    "Tripping breakers signals a short circuit — there is live fault current somewhere. Assume any exposed conductor is energized until proven otherwise.",
+    "Burnt-smell = check for fire hazard before continuing. Pull the disconnect and inspect.",
+    "240V single-phase to ground is lethal. Hand-in-pocket rule when working near live terminals."
+  ],
+  "estimated_minutes": 45,
+  "tags": ["breaker trip", "short circuit", "compressor", "winding test", "burnt smell", "RA14", "rheem"]
+}

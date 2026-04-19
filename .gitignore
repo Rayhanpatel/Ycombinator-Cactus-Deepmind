@@ -51,6 +51,9 @@ inspection_data.db
 *.swo
 *~
 .DS_Store
+rokid/.gradle/
+rokid/.kotlin/
+rokid/local.properties
 
 # Logs
 *.log

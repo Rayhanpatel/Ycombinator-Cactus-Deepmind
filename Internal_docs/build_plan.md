@@ -1,5 +1,13 @@
 # HVAC Copilot — Hackathon Build Plan
 
+> **⚠️ Pivoted to Mac web app on 2026-04-18.** Sections 5 (iOS-first platform
+> decision), 7 (per-person iOS work split), and 11 (Swift/Xcode setup) are
+> historical — we retired the iOS path after hitting open bugs in the Cactus
+> iOS distribution. The product, demos, tool schemas, and KB in this doc
+> are unchanged and still correct. The current build is Python FastAPI +
+> Cactus on the Mac with a browser UI; see `README.md` and
+> `~/.claude/plans/ok-think-and-revamp-prancy-spring.md` for the live plan.
+
 **Hackathon:** YC × Cactus × Google DeepMind — Voice Agents on Gemma 4
 **Team:** 3 people
 **Repo:** https://github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind

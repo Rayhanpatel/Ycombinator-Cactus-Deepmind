@@ -23,7 +23,7 @@ class Config:
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
     # ── Model Selection ───────────────────────────────────────
-    CACTUS_LLM_MODEL: str = os.getenv("CACTUS_LLM_MODEL", "google/gemma-4-E2B-it")
+    CACTUS_LLM_MODEL: str = os.getenv("CACTUS_LLM_MODEL", "google/gemma-4-E4B-it")
     CACTUS_FUNCTION_MODEL: str = os.getenv("CACTUS_FUNCTION_MODEL", "google/functiongemma-270m-it")
     CACTUS_TRANSCRIPTION_MODEL: str = os.getenv("CACTUS_TRANSCRIPTION_MODEL", "openai/whisper-small")
 

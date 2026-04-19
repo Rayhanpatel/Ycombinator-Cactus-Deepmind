@@ -2,6 +2,11 @@
 Cloud Fallback — routes complex queries to Gemini when on-device
 confidence is below the threshold.
 
+NOTE: NOT on the web-server path. src/main.py is deliberately unplugged
+from the cloud to preserve the "100% on-device, zero API calls" demo
+narrative. Kept here for the standalone CLI (src/agent.py) or for when
+hybrid routing is turned back on.
+
 The Cactus engine handles cloud handoff automatically when `cactus auth`
 has been configured. This module provides an explicit Gemini fallback
 for cases where you want more control over cloud routing logic.

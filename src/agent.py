@@ -1,6 +1,12 @@
 """
-Voice Agent — the main orchestrator tying together:
-  - Voice input (microphone + VAD)
+Voice Agent — standalone CLI orchestrator.
+
+NOTE: NOT on the web-server path. The shipping backend is src/main.py.
+This module is kept as a terminal-only fallback for smoke-testing Cactus
+without the browser. See README.md for the primary quickstart.
+
+Ties together:
+  - Voice input (microphone + VAD, via src/voice_handler.py)
   - On-device inference (Cactus + Gemma 4)
   - Cloud fallback (Gemini)
   - Tool execution (function calling)

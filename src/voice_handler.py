@@ -1,6 +1,11 @@
 """
 Voice Handler — microphone capture, audio playback, and VAD.
 
+NOTE: NOT on the web-server path. The browser does mic capture client-side
+via getUserMedia in web/app.js, and src/main.py receives PCM16 LE bytes
+over the WebSocket. This module is kept for the standalone CLI (src/agent.py)
+and as a fallback if you ever go browser-less.
+
 Provides a simple interface for recording audio from the microphone,
 detecting when the user stops speaking (VAD), and saving/loading audio files.
 

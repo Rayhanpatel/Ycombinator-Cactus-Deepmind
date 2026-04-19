@@ -1,0 +1,149 @@
+{
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "query_kb",
+        "description": "Search the HVAC knowledge base for troubleshooting steps, part numbers, or specs matching a symptom or equipment model.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Natural-language query, e.g. 'Carrier 58STA short cycling' or 'capacitor replacement procedure'."
+            },
+            "equipment_model": {
+              "type": "string",
+              "description": "Optional equipment model to narrow results, e.g. '58STA090'."
+            },
+            "top_k": {
+              "type": "integer",
+              "default": 3,
+              "description": "Max results to return."
+            }
+          },
+          "required": ["query"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "log_finding",
+        "description": "Record a diagnosed issue to the inspection log. Call this once the technician has confirmed a concrete problem.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "Where on the equipment the issue was found, e.g. 'outdoor condenser unit'."
+            },
+            "issue": {
+              "type": "string",
+              "description": "Short description of the problem, e.g. 'failed run capacitor'."
+            },
+            "severity": {
+              "type": "string",
+              "enum": ["info", "minor", "major", "critical"],
+              "description": "Severity. Critical = safety risk or unit offline."
+            },
+            "part_number": {
+              "type": "string",
+              "description": "Optional replacement part number if known."
+            },
+            "notes": {
+              "type": "string",
+              "description": "Optional extra context or measurements."
+            }
+          },
+          "required": ["location", "issue", "severity"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "flag_safety",
+        "description": "Raise a safety alert. Stops the normal flow and forces the UI into STOP mode. Use for gas smell, electrical hazard, refrigerant leak, etc.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "hazard": {
+              "type": "string",
+              "description": "Short hazard descriptor, e.g. 'suspected natural gas leak'."
+            },
+            "immediate_action": {
+              "type": "string",
+              "description": "Exact next action the technician must take."
+            },
+            "level": {
+              "type": "string",
+              "enum": ["caution", "stop"],
+              "description": "Caution = continue with precautions. Stop = cease work, evacuate if needed."
+            }
+          },
+          "required": ["hazard", "immediate_action", "level"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "flag_scope_change",
+        "description": "Notify that the repair scope has expanded beyond the original work order. Used for customer communication and billing.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "original_scope": {
+              "type": "string",
+              "description": "What the work order originally called for."
+            },
+            "new_scope": {
+              "type": "string",
+              "description": "What needs to be done now."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Why the scope changed."
+            },
+            "estimated_extra_time_minutes": {
+              "type": "integer",
+              "description": "Rough extra time needed."
+            }
+          },
+          "required": ["original_scope", "new_scope", "reason"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "close_job",
+        "description": "Finalize the visit. Summarizes findings, parts used, and next steps. Call only when technician confirms the job is done.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "description": "One-paragraph summary of what was done."
+            },
+            "parts_used": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "List of part numbers installed or replaced."
+            },
+            "follow_up_required": {
+              "type": "boolean",
+              "description": "Whether a follow-up visit is needed."
+            },
+            "follow_up_notes": {
+              "type": "string",
+              "description": "What the follow-up should address, if any."
+            }
+          },
+          "required": ["summary", "parts_used", "follow_up_required"]
+        }
+      }
+    }
+  ]
+}

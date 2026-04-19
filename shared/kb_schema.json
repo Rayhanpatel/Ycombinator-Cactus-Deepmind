@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HVAC Knowledge Base Entry",
+  "description": "One equipment-specific troubleshooting entry. Stored as one JSON file per entry under /kb/",
+  "type": "object",
+  "required": ["id", "brand", "model", "symptom", "diagnosis", "procedure"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable slug, e.g. 'carrier-58sta-capacitor'. Used for retrieval."
+    },
+    "brand": {
+      "type": "string",
+      "enum": ["Carrier", "Trane", "Lennox", "Goodman", "Rheem", "York", "American Standard", "Bryant", "Mitsubishi", "Other"]
+    },
+    "model": {
+      "type": "string",
+      "description": "Equipment model, e.g. '58STA090'."
+    },
+    "equipment_type": {
+      "type": "string",
+      "enum": ["furnace", "ac-condenser", "heat-pump", "mini-split", "package-unit", "air-handler", "boiler"]
+    },
+    "symptom": {
+      "type": "string",
+      "description": "The observable problem in plain language, e.g. 'intermittent cooling, clicking from outdoor unit'."
+    },
+    "diagnosis": {
+      "type": "string",
+      "description": "Most likely root cause."
+    },
+    "part_number": {
+      "type": "string",
+      "description": "Replacement part number if applicable."
+    },
+    "procedure": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordered list of steps to diagnose and fix."
+    },
+    "safety_notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Safety warnings relevant to this repair."
+    },
+    "estimated_minutes": {
+      "type": "integer",
+      "description": "Rough time for a senior tech."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Keywords for retrieval fallback."
+    }
+  }
+}

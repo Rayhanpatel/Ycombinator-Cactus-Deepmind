@@ -147,8 +147,11 @@ function appendToAssistant(token) {
 }
 
 function finishAssistant(finalText, stats) {
+  // If tokens already streamed into a bubble, KEEP the streamed text —
+  // do NOT overwrite with server's final_text. The server sometimes
+  // concatenates multiple passes (tool-call follow-ups) into final_text
+  // and that'd visually replace what the user has already read.
   if (currentAssistantMsg) {
-    if (finalText) currentAssistantMsg.textContent = finalText;
     currentAssistantMsg = null;
   } else if (finalText) {
     addMessage("assistant", finalText);
@@ -261,7 +264,14 @@ function connect() {
         if (evt.kb_entries != null) kbBadge.textContent = `${evt.kb_entries} KB entries`;
         break;
       case "token":
-        if (currentAssistantMsg === null) setStatus("thinking…", "thinking");
+        if (currentAssistantMsg === null) {
+          setStatus("thinking…", "thinking");
+          // As soon as ANY response token arrives, pause listening so the
+          // model's reply (streaming + TTS) can't trigger a rogue new turn
+          // via ambient audio / echo pickup. Resume after assistant_end.
+          suppressOnResult = true;
+          stopRecognition();
+        }
         appendToAssistant(evt.token);
         break;
       case "tool_call":
@@ -298,6 +308,13 @@ function sendUtterance(text) {
   addMessage("user", clean);
   setStatus("thinking…", "thinking");
   currentAssistantMsg = null;
+  // Clear any lingering SR state so a delayed partial doesn't queue a
+  // duplicate turn, and pause the mic while the model replies.
+  finalTranscript = "";
+  interimTranscript = "";
+  if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+  suppressOnResult = true;
+  stopRecognition();
   // If the camera is enabled, bundle the latest keyframe in a multimodal
   // message so Gemma 4 can reason over image + text in one forward pass.
   if (videoStream && pendingFrameB64) {

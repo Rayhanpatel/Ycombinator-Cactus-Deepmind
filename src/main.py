@@ -428,6 +428,20 @@ class Session:
             m.pop("images", None)
             m.pop("audio", None)
 
+    # Keep the system prompt + the last N messages. Multi-turn coherence
+    # needs SOME history, but unbounded growth blows up prefill time —
+    # we measured TTFT going from ~4s to ~10s as turns accumulated.
+    HISTORY_KEEP_LAST = 10
+
+    def _trim_history(self) -> None:
+        """Keep system prompt + last N exchanges to bound prefill cost."""
+        if len(self.messages) <= 1 + self.HISTORY_KEEP_LAST:
+            return
+        system = self.messages[0]
+        tail = self.messages[-self.HISTORY_KEEP_LAST:]
+        self.messages = [system] + tail
+        logger.info(f"History trimmed to {len(self.messages)} messages")
+
     def reset(self) -> None:
         self.cleanup_turn_files()
         self.messages = [self.messages[0]]  # keep system prompt
@@ -543,6 +557,7 @@ class Session:
         # Order matters: strip refs from history FIRST so next turn's prefill
         # doesn't try to re-open files we're about to delete.
         self._strip_history_file_refs()
+        self._trim_history()
         self.cleanup_turn_files()
 
 

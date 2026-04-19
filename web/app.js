@@ -48,8 +48,9 @@ let suppressOnResult = false;    // true while TTS is speaking, to avoid self-he
 let silenceTimer = null;
 let interimTranscript = "";
 let finalTranscript = "";
-const SILENCE_MS = 1500;         // submit after 1.5s of silence
-const TTS_COOLDOWN_MS = 700;     // wait this long after TTS before re-enabling mic
+const SILENCE_MS = 1200;         // submit after 1.2s of silence (Wine_Voice_AI uses 1.6s)
+const TTS_COOLDOWN_MS = 500;     // wait this long after TTS before re-enabling mic
+const MIN_UTTERANCE_CHARS = 4;   // reject transcripts shorter than this (background noise)
 
 // ── Progressive TTS ─────────────────────────────────────────
 const speechQueue = [];
@@ -330,9 +331,16 @@ function initRecognition() {
   };
   r.onend = () => {
     micListening = false;
-    // Chrome's SR stops on its own after ~60s; restart if still hands-free.
+    // Chrome's SR stops on its own after ~60s of quiet or each final result;
+    // restart on a short delay so the user never has to re-enable hands-free.
     if (handsFree && !isSpeaking && !suppressOnResult) {
-      try { r.start(); micListening = true; } catch {}
+      setTimeout(() => {
+        if (!handsFree || isSpeaking || suppressOnResult || micListening) return;
+        try {
+          r.start();
+          micListening = true;
+        } catch {}
+      }, 150);
     }
   };
   r.onerror = (e) => {
@@ -353,6 +361,9 @@ function submitIfReady() {
   finalTranscript = "";
   interimTranscript = "";
   if (!text) return;
+  // Gate: short transcripts are almost always background noise or
+  // misfires (SR hearing "testing face" from ambient conversation).
+  if (text.length < MIN_UTTERANCE_CHARS) return;
   // Don't submit echoes of our own TTS.
   if (isSpeaking || suppressOnResult) return;
   sendUtterance(text);
@@ -452,11 +463,13 @@ camBtn.addEventListener("click", async () => {
 
 function captureKeyframe() {
   if (!videoStream || camEl.videoWidth === 0) return;
-  camCanvas.width = 320;
+  // 224px wide is roughly what Gemma 4's vision encoder is trained on; going
+  // larger just spends more vision tokens without extra recognition quality.
+  camCanvas.width = 224;
   camCanvas.height = Math.round(camCanvas.width * (camEl.videoHeight / camEl.videoWidth));
   const ctx = camCanvas.getContext("2d");
   ctx.drawImage(camEl, 0, 0, camCanvas.width, camCanvas.height);
-  pendingFrameB64 = camCanvas.toDataURL("image/jpeg", 0.7);
+  pendingFrameB64 = camCanvas.toDataURL("image/jpeg", 0.6);
 }
 
 // ── Mic toggle: click to start/stop hands-free ─────────────

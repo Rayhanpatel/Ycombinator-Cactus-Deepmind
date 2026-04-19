@@ -402,13 +402,31 @@ class Session:
                 break
 
     def cleanup_turn_files(self) -> None:
-        """Best-effort delete of temp files registered this turn."""
+        """Best-effort delete of temp files registered this turn.
+
+        Must be called AFTER _strip_history_file_refs — otherwise Cactus on
+        the next turn re-reads the now-deleted paths still in self.messages
+        and crashes with 'Failed to load image' or 'Could not open WAV file'.
+        """
         for p in self._temp_files:
             try:
                 os.unlink(p)
             except OSError:
                 pass
         self._temp_files.clear()
+
+    def _strip_history_file_refs(self) -> None:
+        """Remove `images` / `audio` fields from every message in history.
+
+        Rationale: after a turn completes, the temp files referenced by those
+        fields will be deleted. Leaving the paths in the message history would
+        break the NEXT turn's cactus_complete prefill. Also cuts context cost:
+        each image is ~256 vision tokens and we don't want them re-processed
+        on every subsequent turn.
+        """
+        for m in self.messages:
+            m.pop("images", None)
+            m.pop("audio", None)
 
     def reset(self) -> None:
         self.cleanup_turn_files()
@@ -522,6 +540,9 @@ class Session:
             "ttft_ms": ttft,
             "decode_tps": decode_tps,
         })
+        # Order matters: strip refs from history FIRST so next turn's prefill
+        # doesn't try to re-open files we're about to delete.
+        self._strip_history_file_refs()
         self.cleanup_turn_files()
 
 
@@ -602,10 +623,12 @@ async def ws_session(ws: WebSocket) -> None:
 
             except Exception as turn_err:
                 # Model/infra crash mid-turn. Roll back the user message we
-                # appended, delete temp files, reset the KV cache, and let the
-                # user try again without reconnecting.
+                # appended, strip any dead file refs, delete temp files,
+                # reset the KV cache, and let the user try again without
+                # reconnecting.
                 logger.exception(f"Turn failed: {turn_err}")
                 session.pop_last_user_message()
+                session._strip_history_file_refs()
                 session.cleanup_turn_files()
                 engine.reset_and_rewarm()
                 await session.send({"type": "error", "message": f"Completion failed: {turn_err}"})

@@ -100,6 +100,68 @@ enum SafetyLevel: String, Codable {
     case stop
 }
 
+// MARK: - Knowledge Base
+
+struct KBEntry: Codable, Identifiable {
+    let id: String
+    let brand: String
+    let model: String
+    let equipmentType: String?
+    let symptom: String
+    let diagnosis: String
+    let partNumber: String?
+    let procedure: [String]
+    let safetyNotes: [String]?
+    let estimatedMinutes: Int?
+    let tags: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, brand, model, symptom, diagnosis, procedure, tags
+        case equipmentType = "equipment_type"
+        case partNumber = "part_number"
+        case safetyNotes = "safety_notes"
+        case estimatedMinutes = "estimated_minutes"
+    }
+}
+
+// MARK: - Scope change (proposed mid-session)
+
+struct ScopeChange: Codable, Identifiable {
+    let id: String
+    var originalScope: String
+    var newScope: String
+    var reason: String
+    var estimatedExtraMinutes: Int?
+    var approved: Bool
+
+    init(originalScope: String, newScope: String, reason: String, estimatedExtraMinutes: Int? = nil) {
+        self.id = UUID().uuidString
+        self.originalScope = originalScope
+        self.newScope = newScope
+        self.reason = reason
+        self.estimatedExtraMinutes = estimatedExtraMinutes
+        self.approved = false
+    }
+}
+
+// MARK: - Job closure
+
+struct JobClosure: Codable {
+    let summary: String
+    let partsUsed: [String]
+    let followUpRequired: Bool
+    let followUpNotes: String?
+    let timestamp: Date
+
+    init(summary: String, partsUsed: [String], followUpRequired: Bool, followUpNotes: String? = nil) {
+        self.summary = summary
+        self.partsUsed = partsUsed
+        self.followUpRequired = followUpRequired
+        self.followUpNotes = followUpNotes
+        self.timestamp = Date()
+    }
+}
+
 // MARK: - AnyCodable (tool arguments accept heterogeneous JSON values)
 
 struct AnyCodable: Codable {

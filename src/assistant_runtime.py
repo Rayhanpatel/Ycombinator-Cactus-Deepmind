@@ -278,7 +278,13 @@ class AssistantSession:
         except Exception as exc:
             logger.warning("cactus_stop failed: %s", exc)
 
-    async def _complete_once(self, pass_idx: int = 0, *, source: str = "browser") -> dict[str, Any]:
+    async def _complete_once(
+        self,
+        pass_idx: int = 0,
+        *,
+        source: str = "browser",
+        turn_id: str | None = None,
+    ) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
         token_queue: asyncio.Queue[str] = asyncio.Queue()
 
@@ -297,6 +303,8 @@ class AssistantSession:
             msg_count=len(self.messages),
             has_audio=has_audio,
             has_image=has_image,
+            source=source,
+            turn_id=turn_id,
         )
 
         async with self.engine.lock:
@@ -314,20 +322,34 @@ class AssistantSession:
             while not task.done():
                 try:
                     token = await asyncio.wait_for(token_queue.get(), timeout=0.05)
-                    await self.emit({"type": "token", "token": token, "source": source})
+                    await self.emit({"type": "token", "token": token, "source": source, "turn_id": turn_id})
                 except asyncio.TimeoutError:
                     pass
             while not token_queue.empty():
-                await self.emit({"type": "token", "token": token_queue.get_nowait(), "source": source})
+                await self.emit({
+                    "type": "token",
+                    "token": token_queue.get_nowait(),
+                    "source": source,
+                    "turn_id": turn_id,
+                })
             raw = await task
 
         wall_ms = (time.time() - t_start) * 1000
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
-            log_event("complete_end", sid=self.sid, pass_idx=pass_idx, wall_ms=round(wall_ms, 1), error="bad_json")
+            log_event(
+                "complete_end",
+                sid=self.sid,
+                pass_idx=pass_idx,
+                wall_ms=round(wall_ms, 1),
+                error="bad_json",
+                source=source,
+                turn_id=turn_id,
+            )
             return {"response": "", "function_calls": []}
 
+        parsed["_wall_ms"] = round(wall_ms, 1)
         log_event(
             "complete_end",
             sid=self.sid,
@@ -343,11 +365,20 @@ class AssistantSession:
             response_len=len(parsed.get("response") or ""),
             n_function_calls=len(parsed.get("function_calls") or []),
             cloud_handoff=parsed.get("cloud_handoff"),
+            source=source,
+            turn_id=turn_id,
         )
         return parsed
 
-    async def _dispatch_calls(self, function_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def _dispatch_calls(
+        self,
+        function_calls: list[dict[str, Any]],
+        *,
+        turn_id: str | None = None,
+        pass_idx: int | None = None,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         tool_messages: list[dict[str, Any]] = []
+        tool_trace: list[dict[str, Any]] = []
         for call in function_calls:
             name = call.get("name", "")
             arguments = call.get("arguments", {})
@@ -370,7 +401,13 @@ class AssistantSession:
                 args_preview=json.dumps(arguments, default=str)[:120],
                 result_preview=json.dumps(result_parsed, default=str)[:200],
                 exec_ms=round(exec_ms, 2),
+                pass_idx=pass_idx,
+                turn_id=turn_id,
             )
+            tool_trace.append({
+                "name": (name or "").strip(),
+                "exec_ms": round(exec_ms, 2),
+            })
             tool_messages.append({
                 "role": "tool",
                 "content": json.dumps({"name": name, "content": result_json}),
@@ -381,9 +418,15 @@ class AssistantSession:
                 "arguments": arguments,
                 "result": result_parsed,
             })
-        return tool_messages
+        return tool_messages, tool_trace
 
-    async def run_turn(self, *, source: str = "browser", max_passes: int = 3) -> None:
+    async def run_turn(
+        self,
+        *,
+        source: str = "browser",
+        max_passes: int = 3,
+        turn_id: str | None = None,
+    ) -> None:
         self.turn_count += 1
         turn_t0 = time.time()
         final_text = ""
@@ -391,19 +434,35 @@ class AssistantSession:
         decode_tps: float | None = None
         passes_done = 0
         self.cancel_requested = False
+        trace: dict[str, Any] = {
+            "passes": [],
+            "tool_calls": [],
+        }
 
         for pass_idx in range(max_passes):
             if self.cancel_requested:
                 logger.info("turn %s cancelled before pass %s", self.turn_count, pass_idx)
                 break
             passes_done = pass_idx + 1
-            result = await self._complete_once(pass_idx=pass_idx, source=source)
+            result = await self._complete_once(pass_idx=pass_idx, source=source, turn_id=turn_id)
             if self.cancel_requested:
                 logger.info("turn %s cancelled mid-turn after pass %s", self.turn_count, pass_idx)
                 break
 
             assistant_text = result.get("response", "") or ""
             function_calls = result.get("function_calls") or []
+            trace["passes"].append({
+                "pass_idx": pass_idx,
+                "wall_ms": result.get("_wall_ms"),
+                "ttft_ms": result.get("time_to_first_token_ms"),
+                "total_ms": result.get("total_ms"),
+                "decode_tps": result.get("decode_tps"),
+                "prefill_tps": result.get("prefill_tps"),
+                "prefill_tokens": result.get("prefill_tokens"),
+                "decode_tokens": result.get("decode_tokens"),
+                "n_function_calls": len(function_calls),
+                "response_len": len(assistant_text),
+            })
             if pass_idx == 0:
                 ttft = result.get("time_to_first_token_ms")
                 decode_tps = result.get("decode_tps")
@@ -421,26 +480,36 @@ class AssistantSession:
             if not function_calls:
                 break
 
-            tool_messages = await self._dispatch_calls(function_calls)
+            tool_messages, tool_trace = await self._dispatch_calls(
+                function_calls,
+                turn_id=turn_id,
+                pass_idx=pass_idx,
+            )
+            trace["tool_calls"].extend(tool_trace)
             self.messages.extend(tool_messages)
             await self.emit_session_state()
 
+        trace["passes_done"] = passes_done
+        trace["turn_total_ms"] = round((time.time() - turn_t0) * 1000, 1)
         await self.emit({
             "type": "assistant_end",
             "text": final_text,
             "ttft_ms": ttft,
             "decode_tps": decode_tps,
             "source": source,
+            "turn_id": turn_id,
+            "trace": trace,
         })
         log_event(
             "turn_end",
             sid=self.sid,
             turn_idx=self.turn_count,
             passes=passes_done,
-            total_ms=round((time.time() - turn_t0) * 1000, 1),
+            total_ms=trace["turn_total_ms"],
             history_len=len(self.messages),
             final_text_len=len(final_text),
             source=source,
+            turn_id=turn_id,
         )
         self._strip_history_file_refs()
         self._trim_history()
@@ -546,33 +615,74 @@ class SharedAssistantRuntime:
         add_message: Callable[[], None],
         user_text: str | None = None,
         interrupt: bool = False,
+        turn_id: str | None = None,
     ) -> None:
         if interrupt and self._current_turn_task and not self._current_turn_task.done():
             await self.cancel_current_turn()
 
+        submit_t0 = time.time()
+        log_event(
+            "turn_submit",
+            sid=self.session.sid,
+            source=source,
+            turn_id=turn_id,
+            interrupt=interrupt,
+            text_len=len(user_text or ""),
+        )
         async with self._turn_lock:
             if user_text and source != "browser":
-                await self.broadcast({"type": "user_turn", "source": source, "text": user_text})
+                await self.broadcast({
+                    "type": "user_turn",
+                    "source": source,
+                    "text": user_text,
+                    "turn_id": turn_id,
+                })
 
             self._is_generating = True
             self._current_turn_task = asyncio.current_task()
             try:
+                log_event(
+                    "turn_start",
+                    sid=self.session.sid,
+                    source=source,
+                    turn_id=turn_id,
+                    queue_wait_ms=round((time.time() - submit_t0) * 1000, 1),
+                )
                 add_message()
-                await self.session.run_turn(source=source)
+                await self.session.run_turn(source=source, turn_id=turn_id)
             except ValueError as exc:
                 logger.info("Rejected turn: %s", exc)
-                log_event("turn_error", sid=self.session.sid, error=str(exc), cause="guard_rail", source=source)
-                await self.broadcast({"type": "error", "message": str(exc), "source": source})
-                await self.broadcast({"type": "assistant_end", "text": "", "source": source})
+                log_event(
+                    "turn_error",
+                    sid=self.session.sid,
+                    error=str(exc),
+                    cause="guard_rail",
+                    source=source,
+                    turn_id=turn_id,
+                )
+                await self.broadcast({"type": "error", "message": str(exc), "source": source, "turn_id": turn_id})
+                await self.broadcast({"type": "assistant_end", "text": "", "source": source, "turn_id": turn_id})
             except Exception as turn_err:
                 logger.exception("Turn failed: %s", turn_err)
-                log_event("turn_error", sid=self.session.sid, error=str(turn_err), cause="model_crash", source=source)
+                log_event(
+                    "turn_error",
+                    sid=self.session.sid,
+                    error=str(turn_err),
+                    cause="model_crash",
+                    source=source,
+                    turn_id=turn_id,
+                )
                 self.session.pop_last_user_message()
                 self.session._strip_history_file_refs()
                 self.session.cleanup_turn_files()
                 self.session.engine.reset_and_rewarm()
-                await self.broadcast({"type": "error", "message": f"Completion failed: {turn_err}", "source": source})
-                await self.broadcast({"type": "assistant_end", "text": "", "source": source})
+                await self.broadcast({
+                    "type": "error",
+                    "message": f"Completion failed: {turn_err}",
+                    "source": source,
+                    "turn_id": turn_id,
+                })
+                await self.broadcast({"type": "assistant_end", "text": "", "source": source, "turn_id": turn_id})
             finally:
                 self._is_generating = False
                 self._current_turn_task = None
@@ -650,7 +760,14 @@ class SharedAssistantRuntime:
 
         await self.broadcast({"type": "error", "message": f"Unknown type: {kind}"})
 
-    async def submit_rokid_turn(self, text: str, *, jpeg_bytes: bytes | None = None, interrupt: bool = True) -> None:
+    async def submit_rokid_turn(
+        self,
+        text: str,
+        *,
+        jpeg_bytes: bytes | None = None,
+        interrupt: bool = True,
+        turn_id: str | None = None,
+    ) -> None:
         clean = (text or "").strip()
         if not clean:
             return
@@ -662,6 +779,7 @@ class SharedAssistantRuntime:
             source="rokid",
             user_text=clean,
             interrupt=interrupt,
+            turn_id=turn_id,
             add_message=lambda: self.session.add_user_multimodal(
                 f"{prompt}\n\nUser transcript: {clean}",
                 jpeg_bytes=jpeg_bytes,

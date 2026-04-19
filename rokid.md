@@ -225,6 +225,75 @@ The HUD shows:
 - `web/index.html`
   Browser UI layout including the Rokid panel.
 
+## Latency logs
+
+The server writes one JSONL session log per run under:
+
+```text
+logs/session_<unix_ts>_<pid>.jsonl
+```
+
+For Rokid turns, the detailed latency record is the `rokid_trace` event. Each `rokid_trace` line includes:
+
+- `turn_id`
+- `speech_to_finalize_ms`
+- `stt_ms`
+- `submit_to_assistant_ms`
+- `llm_ttft_ms`
+- `llm_turn_total_ms`
+- `tool_total_ms`
+- `tts_synth_ms`
+- `assistant_to_audio_enqueue_ms`
+- `audio_playback_ms`
+- `speech_to_audio_enqueue_ms`
+- `speech_to_audio_finish_ms`
+
+The log also keeps lower-level span events such as:
+
+- `rokid_utterance_finalized`
+- `rokid_stt_start`
+- `rokid_stt_end`
+- `turn_submit`
+- `turn_start`
+- `complete_start`
+- `complete_end`
+- `tool_call`
+- `rokid_assistant_final`
+- `rokid_tts_start`
+- `rokid_tts_end`
+- `rokid_audio_enqueued`
+- `rokid_audio_playback_expected_end`
+
+Quick ways to inspect the log while the server is running:
+
+```bash
+tail -f logs/session_*.jsonl
+```
+
+```bash
+curl -s http://127.0.0.1:8000/logs/summary
+```
+
+`/logs/summary` now includes `recent_rokid_traces`, which is the fastest way to see the latest per-turn latency breakdowns.
+
+For raw recent events:
+
+```bash
+curl -s "http://127.0.0.1:8000/logs/recent?n=300"
+```
+
+If you have `jq`, this filters only the completed Rokid turn traces:
+
+```bash
+curl -s "http://127.0.0.1:8000/logs/recent?n=300" | jq '.events[] | select(.kind == "rokid_trace")'
+```
+
+To download the full current session log:
+
+```bash
+curl -OJ http://127.0.0.1:8000/logs/download
+```
+
 ## Troubleshooting
 
 - If you close or background the Rokid app and expect it to stay connected, that is not the current behavior. The app now disconnects on background so the next launch renegotiates a clean session.

@@ -8,11 +8,13 @@ import socket
 import time
 from collections import deque
 from contextlib import suppress
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from fractions import Fraction
 from typing import Any, AsyncIterator
 
 from src.config import cfg
+from src.session_log import log_event
 from src.speech_io import (
     FeedResult,
     FinalizedUtterance,
@@ -140,6 +142,61 @@ def hud_text(text: str, *, limit: int = 180) -> str:
     if len(clean) <= limit:
         return clean
     return clean[: limit - 1].rstrip() + "…"
+
+
+@dataclass
+class RokidTurnTrace:
+    turn_id: str
+    session_token: int
+    speech_started_at: float | None
+    speech_finalized_at: float
+    utterance_start_s: float | None
+    utterance_end_s: float | None
+    utterance_duration_ms: float | None
+    utterance_samples: int
+    transcript: str = ""
+    assistant_text: str = ""
+    stt_started_at: float | None = None
+    stt_finished_at: float | None = None
+    submit_started_at: float | None = None
+    assistant_finished_at: float | None = None
+    tts_started_at: float | None = None
+    tts_finished_at: float | None = None
+    audio_enqueued_at: float | None = None
+    audio_expected_finish_at: float | None = None
+    audio_duration_ms: float | None = None
+    runtime_trace: dict[str, Any] = field(default_factory=dict)
+
+    def summary(self, *, outcome: str) -> dict[str, Any]:
+        def delta_ms(start: float | None, end: float | None) -> float | None:
+            if start is None or end is None:
+                return None
+            return round((end - start) * 1000, 1)
+
+        tool_calls = self.runtime_trace.get("tool_calls") or []
+        return {
+            "turn_id": self.turn_id,
+            "session_token": self.session_token,
+            "outcome": outcome,
+            "utterance_duration_ms": round(self.utterance_duration_ms, 1) if self.utterance_duration_ms is not None else None,
+            "utterance_samples": self.utterance_samples,
+            "speech_to_finalize_ms": delta_ms(self.speech_started_at, self.speech_finalized_at),
+            "stt_ms": delta_ms(self.stt_started_at, self.stt_finished_at),
+            "submit_to_assistant_ms": delta_ms(self.submit_started_at, self.assistant_finished_at),
+            "tts_synth_ms": delta_ms(self.tts_started_at, self.tts_finished_at),
+            "assistant_to_audio_enqueue_ms": delta_ms(self.assistant_finished_at, self.audio_enqueued_at),
+            "audio_playback_ms": round(self.audio_duration_ms, 1) if self.audio_duration_ms is not None else None,
+            "speech_to_audio_enqueue_ms": delta_ms(self.speech_started_at, self.audio_enqueued_at),
+            "speech_to_audio_finish_ms": delta_ms(self.speech_started_at, self.audio_expected_finish_at),
+            "llm_ttft_ms": self.runtime_trace.get("ttft_ms"),
+            "llm_turn_total_ms": self.runtime_trace.get("turn_total_ms"),
+            "llm_passes_done": self.runtime_trace.get("passes_done"),
+            "tool_total_ms": round(sum(float(call.get("exec_ms") or 0.0) for call in tool_calls), 1) if tool_calls else 0.0,
+            "tool_calls": tool_calls,
+            "passes": self.runtime_trace.get("passes") or [],
+            "transcript": self.transcript,
+            "assistant_text": self.assistant_text,
+        }
 
 
 class AudioFrameConverter:
@@ -296,6 +353,7 @@ class RokidBridgeManager:
             "ignored_utterances_while_busy": 0,
             "last_user_text": "",
             "last_assistant_text": "",
+            "last_latency_trace": {},
             "tts_playing": False,
             "recent_events": [],
             "session_url_examples": [],
@@ -310,13 +368,16 @@ class RokidBridgeManager:
         self._current_session_token = 0
         self._speech_service = SpeechService()
         self._speech_stream = None
-        self._speech_queue: asyncio.Queue[FinalizedUtterance] | None = None
+        self._speech_queue: asyncio.Queue[tuple[str, FinalizedUtterance]] | None = None
         self._speech_worker: asyncio.Task[None] | None = None
         self._tts_track: SynthAudioTrack | None = None
         self._tts_task: asyncio.Task[None] | None = None
         self._tts_finish_task: asyncio.Task[None] | None = None
         self._tts_token = 0
         self._audio_converter = AudioFrameConverter() if AudioResampler is not None else None
+        self._speech_started_at: float | None = None
+        self._turn_trace_counter = 0
+        self._turn_traces: dict[str, RokidTurnTrace] = {}
 
     async def prewarm(self) -> None:
         if not self._available:
@@ -336,6 +397,57 @@ class RokidBridgeManager:
 
     def snapshot(self) -> dict[str, Any]:
         return {**self._state, "server_time": utc_now()}
+
+    def _next_turn_id(self, session_token: int) -> str:
+        self._turn_trace_counter += 1
+        return f"rokid-{session_token}-{self._turn_trace_counter}"
+
+    def _create_turn_trace(self, session_token: int, utterance: FinalizedUtterance) -> RokidTurnTrace:
+        now = time.perf_counter()
+        utterance_duration_ms: float | None = None
+        if utterance.start_s is not None and utterance.end_s is not None:
+            utterance_duration_ms = max(0.0, (utterance.end_s - utterance.start_s) * 1000)
+        trace = RokidTurnTrace(
+            turn_id=self._next_turn_id(session_token),
+            session_token=session_token,
+            speech_started_at=self._speech_started_at,
+            speech_finalized_at=now,
+            utterance_start_s=utterance.start_s,
+            utterance_end_s=utterance.end_s,
+            utterance_duration_ms=utterance_duration_ms,
+            utterance_samples=int(getattr(utterance.audio, "shape", [0])[0] if utterance.audio is not None else 0),
+        )
+        self._turn_traces[trace.turn_id] = trace
+        return trace
+
+    def _turn_trace(self, turn_id: str | None) -> RokidTurnTrace | None:
+        if not turn_id:
+            return None
+        return self._turn_traces.get(turn_id)
+
+    async def _finish_turn_trace(
+        self,
+        turn_id: str | None,
+        *,
+        outcome: str,
+        assistant_text: str | None = None,
+        runtime_trace: dict[str, Any] | None = None,
+    ) -> None:
+        trace = self._turn_trace(turn_id)
+        if trace is None:
+            return
+        if assistant_text is not None:
+            trace.assistant_text = assistant_text
+        if runtime_trace is not None:
+            trace.runtime_trace = runtime_trace
+        summary = trace.summary(outcome=outcome)
+        log_event("rokid_trace", **summary)
+        await self._mutate_state(
+            session_token=trace.session_token,
+            last_latency_trace=summary,
+            message=f"Turn trace ready: {turn_id}",
+        )
+        self._turn_traces.pop(trace.turn_id, None)
 
     async def _broadcast_state(self) -> None:
         await self.runtime.broadcast({"type": "rokid_state", "state": self.snapshot()})
@@ -403,6 +515,8 @@ class RokidBridgeManager:
             self._current_session_token += 1
             token = self._current_session_token
             self._speech_queue = asyncio.Queue()
+            self._speech_started_at = None
+            self._turn_traces.clear()
             self._speech_stream = self._speech_service.create_stream() if self._speech_service.ready else None
             self._tts_track = SynthAudioTrack()
             self._state.update(
@@ -426,6 +540,7 @@ class RokidBridgeManager:
                 speech_backend_error=self._speech_service.error or "",
                 speech_debug={},
                 ignored_utterances_while_busy=0,
+                last_latency_trace={},
             )
         if self._speech_queue is not None:
             self._speech_worker = asyncio.create_task(self._speech_worker_loop(token, self._speech_queue))
@@ -433,6 +548,7 @@ class RokidBridgeManager:
         return token, previous_peer
 
     async def _finish_session(self, session_token: int, *, connection_state: str, ice_connection_state: str | None = None, message: str | None = None) -> None:
+        pending_turn_ids = list(self._turn_traces)
         if self._speech_worker is not None:
             self._speech_worker.cancel()
             self._speech_worker = None
@@ -450,6 +566,7 @@ class RokidBridgeManager:
             self._control_channel = None
             self._speech_stream = None
             self._speech_queue = None
+            self._speech_started_at = None
             self._tts_track = None
             self._state["session_active"] = False
             self._state["connection_state"] = connection_state
@@ -463,6 +580,8 @@ class RokidBridgeManager:
                 recent_events.append({"timestamp": utc_now(), "message": message})
                 self._state["recent_events"] = recent_events[-40:]
         await self._broadcast_state()
+        for turn_id in pending_turn_ids:
+            await self._finish_turn_trace(turn_id, outcome="session_closed")
 
     async def _set_control_channel(self, channel: RTCDataChannel, session_token: int) -> bool:
         async with self._state_lock:
@@ -542,6 +661,7 @@ class RokidBridgeManager:
         await self._mutate_state(session_token=session_token, message=f"Wearable message: {message_type or message[:80]}")
 
     async def _handle_speech_start(self, session_token: int) -> None:
+        log_event("rokid_speech_start", session_token=session_token)
         await self._mutate_state(
             session_token=session_token,
             speech_state="listening",
@@ -554,29 +674,51 @@ class RokidBridgeManager:
     def _assistant_busy(self) -> bool:
         return self.runtime.is_generating or bool(self._state.get("tts_playing"))
 
-    async def _speech_worker_loop(self, session_token: int, queue: asyncio.Queue[FinalizedUtterance]) -> None:
+    async def _speech_worker_loop(self, session_token: int, queue: asyncio.Queue[tuple[str, FinalizedUtterance]]) -> None:
         while True:
-            utterance = await queue.get()
+            turn_id, utterance = await queue.get()
+            trace = self._turn_trace(turn_id)
             try:
                 if self._assistant_busy():
+                    log_event("rokid_turn_ignored", turn_id=turn_id, reason="assistant_busy", session_token=session_token)
                     await self._mutate_state(
                         session_token=session_token,
                         ignored_utterances_while_busy=int(self._state.get("ignored_utterances_while_busy", 0)) + 1,
                         message="Ignored utterance while assistant busy",
                     )
+                    await self._finish_turn_trace(turn_id, outcome="ignored_while_busy")
                     continue
+                if trace is not None:
+                    trace.stt_started_at = time.perf_counter()
+                log_event("rokid_stt_start", turn_id=turn_id, session_token=session_token)
                 text = await asyncio.to_thread(self._speech_service.transcribe, utterance.audio)
+                if trace is not None:
+                    trace.stt_finished_at = time.perf_counter()
+                    trace.transcript = text
+                log_event(
+                    "rokid_stt_end",
+                    turn_id=turn_id,
+                    session_token=session_token,
+                    stt_ms=trace.summary(outcome="pending").get("stt_ms") if trace is not None else None,
+                    transcript_len=len(text),
+                    transcript_preview=text[:160],
+                )
                 if not text:
+                    await self._finish_turn_trace(turn_id, outcome="empty_transcript")
                     continue
                 if self._assistant_busy():
+                    log_event("rokid_turn_ignored", turn_id=turn_id, reason="assistant_busy_after_stt", session_token=session_token)
                     await self._mutate_state(
                         session_token=session_token,
                         ignored_utterances_while_busy=int(self._state.get("ignored_utterances_while_busy", 0)) + 1,
                         message="Ignored transcribed utterance while assistant busy",
                     )
+                    await self._finish_turn_trace(turn_id, outcome="ignored_after_stt")
                     continue
                 async with self._state_lock:
                     assistant_jpeg = self._assistant_jpeg
+                if trace is not None:
+                    trace.submit_started_at = time.perf_counter()
                 await self._mutate_state(
                     session_token=session_token,
                     speech_state="thinking",
@@ -587,11 +729,13 @@ class RokidBridgeManager:
                 with suppress(Exception):
                     await self.send_control({"type": "status", "text": "Thinking…"})
                     await self.send_control({"type": "display_text", "text": hud_text(text)})
-                await self.runtime.submit_rokid_turn(text, jpeg_bytes=assistant_jpeg, interrupt=False)
+                log_event("rokid_turn_submit", turn_id=turn_id, session_token=session_token, transcript_len=len(text))
+                await self.runtime.submit_rokid_turn(text, jpeg_bytes=assistant_jpeg, interrupt=False, turn_id=turn_id)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.exception("rokid speech worker failed: %s", exc)
+                log_event("rokid_turn_error", turn_id=turn_id, session_token=session_token, error=str(exc), stage="speech_worker")
                 await self._mutate_state(
                     session_token=session_token,
                     speech_backend_ready=False,
@@ -599,6 +743,7 @@ class RokidBridgeManager:
                     speech_state="idle",
                     message=f"Speech worker error: {exc}",
                 )
+                await self._finish_turn_trace(turn_id, outcome="speech_worker_error")
 
     async def _consume_video(self, track: MediaStreamTrack, session_token: int) -> None:
         min_interval = 1 / PREVIEW_FPS if PREVIEW_FPS > 0 else 0
@@ -654,6 +799,7 @@ class RokidBridgeManager:
                 if self._assistant_busy():
                     if not busy_drop_active:
                         self._speech_stream.reset()
+                        self._speech_started_at = None
                         last_debug = {}
                         busy_drop_active = True
                     if frames_seen % 25 == 0:
@@ -670,6 +816,7 @@ class RokidBridgeManager:
                 result: FeedResult = self._speech_stream.feed_pcm16(pcm16_bytes, src_sr=sample_rate, channels=1)
                 last_debug = result.debug
                 if result.speech_started:
+                    self._speech_started_at = time.perf_counter()
                     asyncio.create_task(self._handle_speech_start(session_token))
                     await self._mutate_state(
                         session_token=session_token,
@@ -700,7 +847,20 @@ class RokidBridgeManager:
                     )
                 if self._speech_queue is not None:
                     for utterance in result.utterances:
-                        await self._speech_queue.put(utterance)
+                        trace = self._create_turn_trace(session_token, utterance)
+                        log_event(
+                            "rokid_utterance_finalized",
+                            turn_id=trace.turn_id,
+                            session_token=session_token,
+                            utterance_start_s=utterance.start_s,
+                            utterance_end_s=utterance.end_s,
+                            utterance_duration_ms=round(trace.utterance_duration_ms, 1) if trace.utterance_duration_ms is not None else None,
+                            utterance_samples=trace.utterance_samples,
+                            speech_to_finalize_ms=trace.summary(outcome="pending").get("speech_to_finalize_ms"),
+                        )
+                        await self._speech_queue.put((trace.turn_id, utterance))
+                    if result.utterances:
+                        self._speech_started_at = None
         except Exception:
             logger.info("rokid: audio track ended")
         finally:
@@ -861,28 +1021,59 @@ class RokidBridgeManager:
             self._tts_finish_task.cancel()
             self._tts_finish_task = None
 
-    async def _mark_tts_finished_after(self, duration_s: float, token: int) -> None:
+    async def _mark_tts_finished_after(self, duration_s: float, token: int, turn_id: str | None) -> None:
         await asyncio.sleep(duration_s)
         if token != self._tts_token:
             return
+        trace = self._turn_trace(turn_id)
+        if trace is not None:
+            trace.audio_expected_finish_at = time.perf_counter()
+        log_event(
+            "rokid_audio_playback_expected_end",
+            turn_id=turn_id,
+            audio_playback_ms=round(duration_s * 1000, 1),
+        )
         await self._mutate_state(tts_playing=False, speech_state="listening", status_text="Listening…")
         with suppress(Exception):
             await self.send_control({"type": "status", "text": "Listening…"})
+        await self._finish_turn_trace(turn_id, outcome="played")
 
-    async def _speak_text(self, text: str) -> None:
+    async def _speak_text(self, text: str, *, turn_id: str | None, runtime_trace: dict[str, Any] | None = None) -> None:
         token = self._tts_token
         try:
+            trace = self._turn_trace(turn_id)
+            if trace is not None:
+                trace.assistant_text = text
+                trace.runtime_trace = runtime_trace or {}
+                trace.tts_started_at = time.perf_counter()
+            log_event("rokid_tts_start", turn_id=turn_id, text_len=len(text))
             pcm_bytes, sample_rate = await asyncio.to_thread(self._speech_service.synthesize_pcm16, text, out_sr=DEFAULT_AUDIO_SR)
             if token != self._tts_token or self._tts_track is None:
                 return
+            if trace is not None:
+                trace.tts_finished_at = time.perf_counter()
             duration = self._tts_track.enqueue_pcm16(pcm_bytes, sample_rate)
+            if trace is not None:
+                trace.audio_enqueued_at = time.perf_counter()
+                trace.audio_duration_ms = duration * 1000
+            log_event(
+                "rokid_tts_end",
+                turn_id=turn_id,
+                tts_synth_ms=trace.summary(outcome="pending").get("tts_synth_ms") if trace is not None else None,
+                audio_bytes=len(pcm_bytes),
+                audio_duration_ms=round(duration * 1000, 1),
+            )
             await self._mutate_state(tts_playing=duration > 0, speech_state="speaking", last_assistant_text=text)
             if duration > 0:
-                self._tts_finish_task = asyncio.create_task(self._mark_tts_finished_after(duration, token))
+                log_event("rokid_audio_enqueued", turn_id=turn_id, audio_duration_ms=round(duration * 1000, 1))
+                self._tts_finish_task = asyncio.create_task(self._mark_tts_finished_after(duration, token, turn_id))
+            else:
+                await self._finish_turn_trace(turn_id, outcome="assistant_ready_no_audio", assistant_text=text, runtime_trace=runtime_trace or {})
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.exception("rokid tts failed: %s", exc)
+            log_event("rokid_tts_error", turn_id=turn_id, error=str(exc))
             await self._mutate_state(
                 speech_backend_ready=False,
                 speech_backend_error=str(exc),
@@ -890,14 +1081,17 @@ class RokidBridgeManager:
                 speech_state="idle",
                 message=f"TTS error: {exc}",
             )
+            await self._finish_turn_trace(turn_id, outcome="tts_error", assistant_text=text, runtime_trace=runtime_trace or {})
 
     async def handle_runtime_event(self, payload: dict[str, Any]) -> None:
         event_type = payload.get("type")
         if event_type == "user_turn" and payload.get("source") == "rokid":
+            turn_id = payload.get("turn_id")
             await self._mutate_state(last_user_text=payload.get("text", ""), speech_state="thinking")
             with suppress(Exception):
                 await self.send_control({"type": "display_text", "text": hud_text(payload.get("text", ""))})
                 await self.send_control({"type": "status", "text": "Thinking…"})
+            log_event("rokid_llm_turn_started", turn_id=turn_id, transcript_len=len(payload.get("text") or ""))
             return
 
         if event_type == "token":
@@ -907,21 +1101,39 @@ class RokidBridgeManager:
 
         if event_type == "assistant_end":
             text = (payload.get("text") or "").strip()
+            turn_id = payload.get("turn_id")
+            runtime_trace = payload.get("trace") if isinstance(payload.get("trace"), dict) else {}
             if not self._state.get("session_active"):
                 return
+            trace = self._turn_trace(turn_id)
+            if trace is not None:
+                trace.assistant_finished_at = time.perf_counter()
+                trace.assistant_text = text
+                trace.runtime_trace = runtime_trace
+            log_event(
+                "rokid_assistant_final",
+                turn_id=turn_id,
+                text_len=len(text),
+                ttft_ms=payload.get("ttft_ms"),
+                llm_turn_total_ms=runtime_trace.get("turn_total_ms"),
+            )
             self._stop_tts_output()
             if not text:
                 await self._mutate_state(tts_playing=False, speech_state="listening", status_text="Listening…")
                 with suppress(Exception):
                     await self.send_control({"type": "status", "text": "Listening…"})
+                await self._finish_turn_trace(turn_id, outcome="assistant_empty", runtime_trace=runtime_trace)
                 return
             with suppress(Exception):
                 await self.send_control({"type": "display_text", "text": hud_text(text)})
                 await self.send_control({"type": "status", "text": "Speaking…"})
-            self._tts_task = asyncio.create_task(self._speak_text(text))
+            self._tts_task = asyncio.create_task(self._speak_text(text, turn_id=turn_id, runtime_trace=runtime_trace))
             return
 
         if event_type == "error" and self._state.get("session_active"):
+            turn_id = payload.get("turn_id")
             await self._mutate_state(speech_state="idle", status_text="Error")
             with suppress(Exception):
                 await self.send_control({"type": "status", "text": "Error"})
+            log_event("rokid_runtime_error", turn_id=turn_id, error=payload.get("message", "unknown"))
+            await self._finish_turn_trace(turn_id, outcome="runtime_error")

@@ -1,4 +1,14 @@
-// HVAC Copilot — browser client for the Mac-local Cactus server.
+// HVAC Copilot — browser client.
+//
+// Voice strategy: Web Speech API for STT (same pattern as Wine_Voice_AI).
+// Continuous listening with VAD-style silence detection. Transcribed text
+// goes to the server as `multimodal` (with the latest camera keyframe) or
+// plain `text`. Gemma 4 sees text + image in one forward pass; audio bytes
+// never leave the browser.
+//
+// Output: progressive TTS — each complete sentence is queued to
+// SpeechSynthesisUtterance as it arrives, so the assistant starts speaking
+// while the model is still generating.
 
 const $ = (id) => document.getElementById(id);
 
@@ -23,12 +33,96 @@ const camCanvas = $("cam-canvas");
 
 let ws;
 let currentAssistantMsg = null;
-let mediaRecorder = null;
-let audioStream = null;
 let videoStream = null;
-let pendingFrameB64 = null;          // last-captured JPEG keyframe (reserved for later turns)
+let pendingFrameB64 = null;
 let frameInterval = null;
 
+// ── Web Speech API (STT) ────────────────────────────────────
+// Wine_Voice_AI pattern: Chrome does transcription in-browser. No PCM goes
+// over the wire.
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let handsFree = false;           // user toggled hands-free mode on
+let micListening = false;        // recognition actively listening right now
+let suppressOnResult = false;    // true while TTS is speaking, to avoid self-hearing
+let silenceTimer = null;
+let interimTranscript = "";
+let finalTranscript = "";
+const SILENCE_MS = 1500;         // submit after 1.5s of silence
+const TTS_COOLDOWN_MS = 700;     // wait this long after TTS before re-enabling mic
+
+// ── Progressive TTS ─────────────────────────────────────────
+const speechQueue = [];
+let isSpeaking = false;
+let sentenceBuffer = "";
+
+function splitBySentence(text) {
+  if (window.Intl && Intl.Segmenter) {
+    try {
+      const seg = new Intl.Segmenter("en", { granularity: "sentence" });
+      return [...seg.segment(text)].map(s => s.segment).filter(s => s.trim());
+    } catch {}
+  }
+  return text.split(/(?<=[.!?])\s+(?=[A-Z])/).filter(s => s.trim());
+}
+
+function queueSpeech(text) {
+  const t = text.trim();
+  if (!t) return;
+  speechQueue.push(t);
+  playNext();
+}
+
+function playNext() {
+  if (isSpeaking) return;
+  if (speechQueue.length === 0) {
+    // Done speaking; re-enable mic after a short cooldown to avoid echo pickup.
+    if (handsFree) {
+      setTimeout(() => {
+        suppressOnResult = false;
+        startRecognition();
+      }, TTS_COOLDOWN_MS);
+    }
+    return;
+  }
+  const sentence = speechQueue.shift();
+  const u = new SpeechSynthesisUtterance(sentence);
+  u.rate = 1.05;
+  u.pitch = 1.0;
+  u.onstart = () => {
+    isSpeaking = true;
+    // Suppress any mic activity while speaking (browser's own STT would pick us up).
+    suppressOnResult = true;
+    stopRecognition();
+    setStatus("speaking…", "thinking");
+  };
+  u.onend = () => {
+    isSpeaking = false;
+    playNext();
+  };
+  u.onerror = () => {
+    isSpeaking = false;
+    playNext();
+  };
+  window.speechSynthesis.speak(u);
+}
+
+function flushSentenceBuffer(force = false) {
+  if (!sentenceBuffer) return;
+  const pieces = splitBySentence(sentenceBuffer);
+  if (force) {
+    for (const p of pieces) queueSpeech(p);
+    sentenceBuffer = "";
+    return;
+  }
+  if (pieces.length > 1) {
+    // All but the last are complete sentences; the last may still be mid-sentence.
+    for (let i = 0; i < pieces.length - 1; i++) queueSpeech(pieces[i]);
+    sentenceBuffer = pieces[pieces.length - 1];
+  }
+}
+
+// ── Display helpers ─────────────────────────────────────────
 function setStatus(text, cls = "") {
   statusEl.textContent = text;
   statusEl.className = "status " + cls;
@@ -47,11 +141,12 @@ function appendToAssistant(token) {
   if (!currentAssistantMsg) currentAssistantMsg = addMessage("assistant", "");
   currentAssistantMsg.textContent += token;
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  sentenceBuffer += token;
+  flushSentenceBuffer(false);
 }
 
 function finishAssistant(finalText, stats) {
   if (currentAssistantMsg) {
-    // Use the final text from the server (it has tool-call syntax stripped).
     if (finalText) currentAssistantMsg.textContent = finalText;
     currentAssistantMsg = null;
   } else if (finalText) {
@@ -60,18 +155,20 @@ function finishAssistant(finalText, stats) {
   if (stats && stats.ttft_ms) {
     ttftBadge.textContent = `TTFT ${Math.round(stats.ttft_ms)}ms · ${stats.decode_tps ? Math.round(stats.decode_tps) : "-"} tok/s`;
   }
-  setStatus("ready", "connected");
-
-  // Speak the assistant's response via browser TTS for the voice-agent demo feel.
-  if (finalText && "speechSynthesis" in window) {
-    const u = new SpeechSynthesisUtterance(finalText);
-    u.rate = 1.05;
-    u.pitch = 1.0;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
+  // Flush any remaining partial sentence to speech.
+  flushSentenceBuffer(true);
+  if (!isSpeaking && speechQueue.length === 0) {
+    setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
+    if (handsFree) {
+      setTimeout(() => {
+        suppressOnResult = false;
+        startRecognition();
+      }, TTS_COOLDOWN_MS);
+    }
   }
 }
 
+// ── Tool activity log ───────────────────────────────────────
 function toolEntry(payload) {
   const { name, arguments: args, result } = payload;
   const div = document.createElement("div");
@@ -144,6 +241,7 @@ function updateSession(state) {
   }
 }
 
+// ── WS client ───────────────────────────────────────────────
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   ws = new WebSocket(`${proto}//${location.host}/ws/session`);
@@ -158,7 +256,7 @@ function connect() {
 
     switch (evt.type) {
       case "ready":
-        setStatus("ready", "connected");
+        setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
         if (evt.kb_entries != null) kbBadge.textContent = `${evt.kb_entries} KB entries`;
         break;
       case "token":
@@ -176,9 +274,15 @@ function connect() {
         break;
       case "error":
         addMessage("system-note", `[${evt.message}]`);
-        setStatus("ready", "connected");
-        micBtn.classList.remove("listening");
+        setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
         currentAssistantMsg = null;
+        // If we were suppressed from TTS, resume listening.
+        if (handsFree) {
+          setTimeout(() => {
+            suppressOnResult = false;
+            startRecognition();
+          }, 300);
+        }
         break;
       case "pong":
         break;
@@ -186,29 +290,121 @@ function connect() {
   };
 }
 
-function sendText(content) {
+function sendUtterance(text) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  addMessage("user", content);
+  const clean = (text || "").trim();
+  if (!clean) return;
+  addMessage("user", clean);
   setStatus("thinking…", "thinking");
-  ws.send(JSON.stringify({ type: "text", content }));
   currentAssistantMsg = null;
+  // If the camera is enabled, bundle the latest keyframe in a multimodal
+  // message so Gemma 4 can reason over image + text in one forward pass.
+  if (videoStream && pendingFrameB64) {
+    ws.send(JSON.stringify({ type: "multimodal", content: clean, jpeg_b64: pendingFrameB64 }));
+  } else {
+    ws.send(JSON.stringify({ type: "text", content: clean }));
+  }
 }
 
-function sendAudioPcm(pcmBase64) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  setStatus("thinking…", "thinking");
-  // If the camera is enabled and we have a recent keyframe, ship both in one
-  // Gemma 4 multimodal forward pass. Otherwise fall back to audio-only.
-  if (videoStream && pendingFrameB64) {
-    ws.send(JSON.stringify({
-      type: "multimodal",
-      pcm_b64: pcmBase64,
-      jpeg_b64: pendingFrameB64,
-    }));
-  } else {
-    ws.send(JSON.stringify({ type: "audio", pcm_b64: pcmBase64 }));
+// ── Speech recognition lifecycle ────────────────────────────
+function initRecognition() {
+  if (!SpeechRecognition) return null;
+  const r = new SpeechRecognition();
+  r.continuous = true;
+  r.interimResults = true;
+  r.lang = "en-US";
+  r.onresult = (e) => {
+    if (suppressOnResult) return;
+    interimTranscript = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const res = e.results[i];
+      if (res.isFinal) finalTranscript += res[0].transcript + " ";
+      else interimTranscript += res[0].transcript;
+    }
+    // Any new audio resets the silence timer.
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(submitIfReady, SILENCE_MS);
+    if (finalTranscript.trim() || interimTranscript.trim()) {
+      setStatus(`listening: "${(finalTranscript + interimTranscript).trim().slice(-60)}"`, "thinking");
+    }
+  };
+  r.onend = () => {
+    micListening = false;
+    // Chrome's SR stops on its own after ~60s; restart if still hands-free.
+    if (handsFree && !isSpeaking && !suppressOnResult) {
+      try { r.start(); micListening = true; } catch {}
+    }
+  };
+  r.onerror = (e) => {
+    micListening = false;
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      addMessage("system-note", `[mic: ${e.error}]`);
+      handsFree = false;
+      micBtn.classList.remove("listening");
+      micBtn.textContent = "🎙️";
+      setStatus("ready", "connected");
+    }
+  };
+  return r;
+}
+
+function submitIfReady() {
+  const text = (finalTranscript + interimTranscript).trim();
+  finalTranscript = "";
+  interimTranscript = "";
+  if (!text) return;
+  // Don't submit echoes of our own TTS.
+  if (isSpeaking || suppressOnResult) return;
+  sendUtterance(text);
+}
+
+function startRecognition() {
+  if (!recognition) recognition = initRecognition();
+  if (!recognition || micListening || isSpeaking || suppressOnResult) return;
+  try {
+    recognition.start();
+    micListening = true;
+  } catch {
+    // already started
   }
-  currentAssistantMsg = null;
+}
+
+function stopRecognition() {
+  if (!recognition || !micListening) return;
+  try { recognition.stop(); } catch {}
+  micListening = false;
+  if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+}
+
+function toggleHandsFree() {
+  handsFree = !handsFree;
+  if (handsFree) {
+    if (!SpeechRecognition) {
+      addMessage("system-note", "[Browser doesn't support SpeechRecognition. Use Chrome.]");
+      handsFree = false;
+      return;
+    }
+    micBtn.classList.add("listening");
+    micBtn.textContent = "⏹";
+    micBtn.title = "Stop hands-free";
+    startRecognition();
+    setStatus("hands-free · listening", "thinking");
+    // Prime SpeechSynthesis with a user gesture so the FIRST reply can speak.
+    // (Chrome otherwise sometimes blocks autoplay on the initial utterance.)
+    try {
+      const prime = new SpeechSynthesisUtterance("");
+      window.speechSynthesis.speak(prime);
+    } catch {}
+  } else {
+    micBtn.classList.remove("listening");
+    micBtn.textContent = "🎙️";
+    micBtn.title = "Hands-free";
+    stopRecognition();
+    window.speechSynthesis.cancel();
+    speechQueue.length = 0;
+    isSpeaking = false;
+    setStatus("ready", "connected");
+  }
 }
 
 // ── composer ────────────────────────────────────────────────
@@ -216,12 +412,16 @@ composer.addEventListener("submit", (e) => {
   e.preventDefault();
   const v = textInput.value.trim();
   if (!v) return;
-  sendText(v);
+  sendUtterance(v);
   textInput.value = "";
 });
 
 resetBtn.addEventListener("click", () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  window.speechSynthesis.cancel();
+  speechQueue.length = 0;
+  isSpeaking = false;
+  sentenceBuffer = "";
   ws.send(JSON.stringify({ type: "reset" }));
   transcriptEl.innerHTML = "";
   toolLog.innerHTML = "";
@@ -257,75 +457,10 @@ function captureKeyframe() {
   const ctx = camCanvas.getContext("2d");
   ctx.drawImage(camEl, 0, 0, camCanvas.width, camCanvas.height);
   pendingFrameB64 = camCanvas.toDataURL("image/jpeg", 0.7);
-  // Server doesn't consume frames yet — captured for future multimodal wiring.
 }
 
-// ── Mic (push-to-talk) ──────────────────────────────────────
-async function ensureAudioStream() {
-  if (audioStream) return audioStream;
-  audioStream = await navigator.mediaDevices.getUserMedia({
-    audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
-  });
-  return audioStream;
-}
-
-async function startRecording() {
-  try {
-    const stream = await ensureAudioStream();
-    const ctx = new AudioContext({ sampleRate: 16000 });
-    const src = ctx.createMediaStreamSource(stream);
-    const processor = ctx.createScriptProcessor(4096, 1, 1);
-    const chunks = [];
-    processor.onaudioprocess = (e) => {
-      chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-    };
-    src.connect(processor);
-    processor.connect(ctx.destination);
-
-    mediaRecorder = { stop: async () => {
-      src.disconnect();
-      processor.disconnect();
-      await ctx.close();
-      // Concatenate to one float32 buffer
-      const total = chunks.reduce((n, c) => n + c.length, 0);
-      const merged = new Float32Array(total);
-      let offset = 0;
-      for (const c of chunks) { merged.set(c, offset); offset += c.length; }
-      // Convert to PCM16 LE bytes
-      const pcm16 = new Int16Array(merged.length);
-      for (let i = 0; i < merged.length; i++) {
-        const s = Math.max(-1, Math.min(1, merged[i]));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-      }
-      const bytes = new Uint8Array(pcm16.buffer);
-      let bin = "";
-      const CHUNK = 0x8000;
-      for (let i = 0; i < bytes.length; i += CHUNK) {
-        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-      }
-      const b64 = btoa(bin);
-      addMessage("user", "🎙️ (voice)");
-      sendAudioPcm(b64);
-    }};
-    micBtn.classList.add("listening");
-    setStatus("listening…", "thinking");
-  } catch (err) {
-    addMessage("system-note", `Mic blocked: ${err.message}`);
-  }
-}
-
-async function stopRecording() {
-  if (!mediaRecorder) return;
-  await mediaRecorder.stop();
-  mediaRecorder = null;
-  micBtn.classList.remove("listening");
-}
-
-micBtn.addEventListener("mousedown", startRecording);
-micBtn.addEventListener("touchstart", (e) => { e.preventDefault(); startRecording(); });
-micBtn.addEventListener("mouseup", stopRecording);
-micBtn.addEventListener("mouseleave", () => { if (mediaRecorder) stopRecording(); });
-micBtn.addEventListener("touchend", (e) => { e.preventDefault(); stopRecording(); });
+// ── Mic toggle: click to start/stop hands-free ─────────────
+micBtn.addEventListener("click", toggleHandsFree);
 
 // ── boot ────────────────────────────────────────────────────
 connect();

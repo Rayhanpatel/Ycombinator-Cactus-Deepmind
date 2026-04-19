@@ -114,7 +114,11 @@ def _parse_kwargs_paren(args_raw: str) -> dict[str, Any] | None:
     try:
         node = ast.parse(f"_f({args_raw})", mode="eval").body
     except SyntaxError:
-        return None
+        # Gemma 4 sometimes emits paren-wrapped but colon-separated kwargs
+        # like `name(key: "value", other: "v2")` — Python call syntax doesn't
+        # allow `:` there. Fall back to the curly kwargs parser which splits
+        # on commas and `key: value` directly.
+        return _parse_kwargs_curly(args_raw)
     if not isinstance(node, ast.Call):
         return None
     out: dict[str, Any] = {}

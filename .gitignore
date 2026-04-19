@@ -78,3 +78,6 @@ recordings/
 
 # Claude Code local settings
 .claude/
+
+# Private planning + transcripts (not for public repo)
+Internal_docs/

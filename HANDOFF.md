@@ -101,7 +101,7 @@ On-device pitch: everything except the one explicit online-escalation tool runs 
 │   └── smoke_hvac.py             8-case live-server benchmark (not auto-collected)
 │
 ├── demo/                         4 demo scripts (markdown) + backup JSONs
-├── Internal_docs/                vision + earlier plan docs (stale in places)
+├── docs/                         ARCHITECTURE.md (Mermaid diagrams), idea.md (product vision)
 ├── archive/ios-abandoned/        retired Swift scaffold
 ├── cactus/                       external dep, gitignored — venv + weights live here
 ├── 172.20.10.2+2.pem             LAN cert (gitignored via *.pem)
@@ -113,7 +113,7 @@ On-device pitch: everything except the one explicit online-escalation tool runs 
 
 ## §4 System architecture
 
-**Deep version with 8 diagrams, tech stack, decisions: [Internal_docs/ARCHITECTURE.md](Internal_docs/ARCHITECTURE.md).** Summary below.
+**Deep version with 8 Mermaid diagrams, tech stack, decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).** Summary below.
 
 
 ```
@@ -543,7 +543,7 @@ d32c1f0  feat(kb): add MovinCool Climate Pro X14 entry + server-room demo scenar
 1. Submit Reddit Developer Support application for PRAW credentials (~7 days).
 2. Install `sentence-transformers` and benchmark `kb_engine.py` vs `kb_store.py` on the 18-entry corpus — decide whether to retire one.
 3. iOS port once Cactus Apple SDK stabilizes.
-4. Customer-facing companion app (see [Internal_docs/idea.md](Internal_docs/idea.md)).
+4. Customer-facing companion app (see [docs/idea.md](docs/idea.md)).
 5. KB flywheel — every `close_job` output indexed back into the KB, fine-tune at 10k records.
 
 ---

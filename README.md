@@ -45,7 +45,7 @@ tests/
 
 archive/ios-abandoned/   # Swift scaffold (retired — see archive README)
 HANDOFF_IOS_LEGACY.md    # iOS handoff, kept for reference
-Internal_docs/           # idea.md (vision), build_plan.md, conversation history
+docs/                    # ARCHITECTURE.md (8 Mermaid diagrams), idea.md (vision)
 ```
 
 ## The 6 HVAC tools
@@ -156,7 +156,7 @@ Abandoned for this hackathon. The Cactus iOS distribution (XCFramework / SPM) ha
 - [Cactus Docs](https://docs.cactuscompute.com/latest/) · [Python SDK](https://docs.cactuscompute.com/latest/python/) · [Gemma 4 post](https://docs.cactuscompute.com/latest/blog/gemma4/)
 - [Gemma 4 on DeepMind](https://deepmind.google/models/gemma/gemma-4/) · [model card](https://ai.google.dev/gemma/docs/core/model_card_4)
 - [Pre-quantized weights](https://huggingface.co/cactus-compute)
-- Internal: [Internal_docs/idea.md](Internal_docs/idea.md) (vision), [Internal_docs/build_plan.md](Internal_docs/build_plan.md) (hackathon plan, sections 5/7/11 are pre-pivot)
+- Public: [docs/idea.md](docs/idea.md) (product vision), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (8 Mermaid diagrams + tech stack + design decisions)
 
 ## License
 

@@ -80,7 +80,7 @@ Prior hackathon winners (CactusRoute, Warriors, cloudNein, FAT BOSS, TrailSense,
 ## Roadmap
 
 - **iOS port** once Cactus's Apple SDK stabilizes. The FastAPI path is a thin-client swap away from a native Swift app.
-- **Customer app** — the worker app's sibling in [Internal_docs/idea.md](Internal_docs/idea.md). Customer describes a problem by voice + video; a structured brief seeds the tech's On-Site session.
+- **Customer app** — the worker app's sibling in [docs/idea.md](docs/idea.md). Customer describes a problem by voice + video; a structured brief seeds the tech's On-Site session.
 - **KB flywheel** — every `close_job` output gets indexed back into the KB. At 10k resolution records we fine-tune.
 - **Scale to plumbing, electrical, appliance repair.** Same loop, new verticals.
 
@@ -104,7 +104,7 @@ Prior hackathon winners (CactusRoute, Warriors, cloudNein, FAT BOSS, TrailSense,
 - [tests/smoke_hvac.py](tests/smoke_hvac.py) — 8-case live-server benchmark
 - [tests/smoke_ws.py](tests/smoke_ws.py) — single-query WS probe for demo prep
 - [archive/ios-abandoned/](archive/ios-abandoned/) — retired Swift scaffold (preserved)
-- [Internal_docs/idea.md](Internal_docs/idea.md) — full product vision (customer + worker apps)
+- [docs/idea.md](docs/idea.md) — full product vision (customer + worker apps)
 
 ## License
 

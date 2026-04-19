@@ -68,6 +68,16 @@ For Rokid mode the Mac server uses:
 
 The browser UI still has its original browser speech features, but the Rokid flow does not depend on them.
 
+The current default Rokid VAD tuning is intentionally biased toward rejecting background noise:
+
+- `ROKID_VAD_START_THRESHOLD=0.78`
+- `ROKID_VAD_END_THRESHOLD=0.58`
+- `ROKID_VAD_MIN_SILENCE_MS=280`
+- `ROKID_VAD_MIN_SPEECH_MS=320`
+- `ROKID_AUDIO_GATE_DB_OFFSET=12`
+- `ROKID_AUDIO_END_GATE_DB_OFFSET=7`
+- `ROKID_AUDIO_GATE_MIN_DBFS=-44`
+
 ## Setup
 
 ### 1. Install Mac prerequisites
@@ -217,6 +227,7 @@ The HUD shows:
 
 - If `POST /session` returns `503 Service Unavailable`, the usual cause is that the Python env running the server is missing Rokid dependencies such as `aiortc` or `silero-vad`. Re-run `cactus/venv/bin/pip install -r requirements.txt`, then restart the server from `cactus/venv/bin/python`.
 - If the glasses connect but there is no assistant speech, verify `brew install espeak-ng` was run and check `/healthz` or the browser Rokid panel for `speech_backend_error`.
+- If background noise triggers too easily, the current defaults are already stricter than the original setup. To make them stricter still, raise `ROKID_VAD_START_THRESHOLD`, `ROKID_VAD_END_THRESHOLD`, `ROKID_VAD_MIN_SPEECH_MS`, `ROKID_AUDIO_GATE_DB_OFFSET`, or `ROKID_AUDIO_GATE_MIN_DBFS`, then restart the server.
 - If camera works but nothing is transcribed, watch the Rokid panel's `Speech debug` block or inspect `rokid.speech_debug` from `/healthz`. When you speak, `speech_prob` should rise and `speech_ms` should increase. After you stop, `silence_ms` should rise and an utterance should finalize. If needed, tune `ROKID_VAD_START_THRESHOLD`, `ROKID_VAD_END_THRESHOLD`, `ROKID_VAD_MIN_SILENCE_MS`, or `ROKID_AUDIO_GATE_MIN_DBFS` in the server environment.
 - If the server logs `rokid: could not resolve local IPv4 addresses`, that is the Mac hostname lookup failing. It only affects the example session URL shown in the UI. Use the explicit `BRIDGE_SESSION_URL` in `rokid/local.properties`; the actual Rokid connection does not depend on hostname auto-discovery.
 - If the HUD says the backend URL is missing, check `rokid/local.properties`.

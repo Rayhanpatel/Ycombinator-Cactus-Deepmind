@@ -1,21 +1,29 @@
 """
-Web Ranker — optimistic scoring for web-scraped HVAC pages.
+Web Ranker — optimistic scoring for web-scraped HVAC pages + forum replies.
 
-Given already-fetched web documents, produces a ranked list using:
+Given already-fetched documents (manual pages *or* forum comments),
+produces a ranked list using:
 
-    score = w_sim  * cosine(query, doc)
-          + w_auth * authority(domain)
-          + w_fresh * recency_decay(last_modified)
-          + w_unc  * sqrt(ln(N + 1) / (n_source + 1))   ← UCB explore bonus
-          - w_dup  * max_cosine(doc, existing_KB)
+    score = w_sim    * cosine(query, doc)
+          + w_auth   * authority(domain)
+          + w_fresh  * recency_decay(last_modified)
+          + w_unc    * sqrt(ln(N + 1) / (n_source + 1))   ← UCB explore bonus
+          + w_expert * expertise(author, flair, karma, age)
+          + w_depth  * depth_bonus(depth, parent_upvotes)
+          + w_agree  * agreement(sibling_affirmations)
+          - w_dup    * max_cosine(doc, existing_KB)
 
-The UCB term is what makes the ranker "optimistic": sources we've seen
-rarely get a confidence-interval boost so they surface before they've
-earned a track record. Pair with an allowlist (authority map) so the
-explore bonus doesn't drag in junk.
+Manuals tell you what a part is; a veteran tech's deeply-nested reply
+tells you why it keeps failing. The `expertise`, `depth`, and `agreement`
+terms exist so a "cracked technician" comment can outrank a bland
+top-level answer — exactly when the manual isn't enough.
+
+The UCB term remains the "optimistic" piece: sources we've seen rarely
+get a confidence-interval boost so they surface before they've earned a
+track record.
 
 Scraping is intentionally *not* handled here — feed in `WebDoc` objects
-from whatever fetcher you like (httpx, trafilatura, requests+bs4, etc.).
+from whatever fetcher you like (httpx, trafilatura, PRAW, etc.).
 """
 
 from __future__ import annotations
@@ -68,21 +76,73 @@ DEFAULT_WEIGHTS = {
     "w_auth": 0.30,
     "w_fresh": 0.15,
     "w_unc": 0.20,
+    "w_expert": 0.35,
+    "w_depth": 0.15,
+    "w_agree": 0.20,
     "w_dup": 0.40,
 }
 
 DEFAULT_FRESHNESS_HALF_LIFE_DAYS = 365.0
 
+# Flair patterns that signal verified/certified professional status.
+# Order matters — more specific patterns first.
+VERIFIED_PRO_PATTERNS: tuple[str, ...] = (
+    "certified hvac",
+    "verified technician",
+    "verified tech",
+    "master tech",
+    "master hvac",
+    "hvac-pro",
+    "pro hvac",
+)
+PRO_INDICATOR_PATTERNS: tuple[str, ...] = (
+    "hvac technician",
+    "hvac tech",
+    "commercial hvac",
+    "residential hvac",
+    "refrigeration",
+    "journeyman",
+    "licensed",
+    "epa universal",
+    "nate certified",
+)
+# Short phrases in a sibling reply that imply "this fix worked for me".
+# Keep conservative — false positives dilute the agreement signal.
+AFFIRMATION_PHRASES: tuple[str, ...] = (
+    "this is the fix",
+    "this fixed mine",
+    "this worked for me",
+    "can confirm",
+    "exactly this",
+    "had the same issue",
+    "solved it for me",
+    "nailed it",
+)
+
 
 @dataclass
 class WebDoc:
-    """A single fetched web document to be ranked."""
+    """
+    A single fetched document to be ranked. Handles both manual pages and
+    forum comments — forum fields stay None/0 for plain web pages and the
+    corresponding scoring terms evaluate to zero.
+    """
 
     url: str
     text: str                               # cleaned body text (post-boilerplate strip)
     title: str = ""
     last_modified: Optional[float] = None   # unix timestamp; None → no freshness signal
     embedding: Optional[list[float]] = None # if pre-computed; otherwise filled lazily
+
+    # ── forum / comment signals (all optional) ──────────────
+    author: Optional[str] = None
+    author_flair: Optional[str] = None      # e.g. "Certified HVAC-Pro — 15yr commercial"
+    author_karma: Optional[int] = None      # topical karma only; global karma is noise
+    author_account_age_days: Optional[float] = None
+    depth: int = 0                          # 0 = top-level post/page
+    parent_upvotes: Optional[int] = None    # upvotes on the parent comment or thread
+    self_upvotes: Optional[int] = None      # upvotes on this comment (currently advisory)
+    sibling_affirmations: int = 0           # count of sibling replies confirming this fix
 
 
 @dataclass
@@ -171,6 +231,9 @@ class WebRanker:
         n_source = self._source_counts.get(domain, 0)
         ucb = math.sqrt(ln_total / (n_source + 1))
         dup = self._redundancy(doc_vec, kb_vecs) if doc_vec else 0.0
+        expert = _expertise(doc)
+        depth = _depth_bonus(doc)
+        agree = _agreement(doc)
 
         w = self.weights
         total = (
@@ -178,6 +241,9 @@ class WebRanker:
             + w["w_auth"] * auth
             + w["w_fresh"] * fresh
             + w["w_unc"] * ucb
+            + w["w_expert"] * expert
+            + w["w_depth"] * depth
+            + w["w_agree"] * agree
             - w["w_dup"] * dup
         )
 
@@ -189,6 +255,9 @@ class WebRanker:
                 "authority": round(auth, 3),
                 "freshness": round(fresh, 3),
                 "ucb_bonus": round(ucb, 3),
+                "expertise": round(expert, 3),
+                "depth_bonus": round(depth, 3),
+                "agreement": round(agree, 3),
                 "redundancy": round(dup, 3),
                 "domain": domain,
                 "visits": n_source,
@@ -266,3 +335,69 @@ def _domain_of(url: str) -> str:
     except ValueError:
         return ""
     return host[4:] if host.startswith("www.") else host
+
+
+def _expertise(doc: WebDoc) -> float:
+    """
+    0.0–1.0 score for how much we trust the *author*, independent of domain.
+    Verified-pro flair dominates; topical karma and account age are fallbacks
+    for users without flair.
+    """
+    if not doc.author:
+        return 0.0
+
+    flair = (doc.author_flair or "").lower()
+    score = 0.0
+
+    if any(p in flair for p in VERIFIED_PRO_PATTERNS):
+        score = 1.0
+    elif any(p in flair for p in PRO_INDICATOR_PATTERNS):
+        score = 0.7
+
+    # Topical karma — saturating log bonus. 10k karma in r/HVAC ≈ 0.4.
+    if doc.author_karma and doc.author_karma > 0:
+        karma_bonus = min(0.4, math.log10(1 + doc.author_karma) / 10.0)
+        score = max(score, karma_bonus)
+
+    # Anti-throwaway bonus: accounts older than a year get a small boost.
+    if doc.author_account_age_days and doc.author_account_age_days > 365:
+        score = min(1.0, score + 0.1)
+
+    return score
+
+
+def _depth_bonus(doc: WebDoc) -> float:
+    """
+    Deep replies on highly-engaged threads are often where the gold lives.
+    A depth-5 reply on a thread with 0 upvotes is probably noise, so we
+    gate the depth bonus on parent engagement.
+    """
+    if doc.depth <= 0:
+        return 0.0
+    engagement = math.log1p(max(0, doc.parent_upvotes or 0))
+    if engagement == 0:
+        return 0.0
+    # Normalize so a depth-3 reply on a 100-upvote thread ≈ 0.64.
+    return min(1.0, math.log1p(doc.depth) * engagement / 10.0)
+
+
+def _agreement(doc: WebDoc) -> float:
+    """Saturating bonus for 'this fixed mine' sibling replies."""
+    if doc.sibling_affirmations <= 0:
+        return 0.0
+    return min(1.0, math.log1p(doc.sibling_affirmations) / 3.0)
+
+
+def count_affirmations(sibling_texts: list[str]) -> int:
+    """
+    Convenience classifier for callers (e.g. a reddit fetcher) that want
+    to turn raw sibling reply text into a `sibling_affirmations` count.
+    Simple phrase match — good enough for validation, easy to replace
+    with a small classifier later.
+    """
+    total = 0
+    for text in sibling_texts:
+        lowered = text.lower()
+        if any(phrase in lowered for phrase in AFFIRMATION_PHRASES):
+            total += 1
+    return total

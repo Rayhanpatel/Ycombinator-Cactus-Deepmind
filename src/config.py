@@ -22,6 +22,13 @@ class Config:
     CACTUS_API_KEY: str = os.getenv("CACTUS_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
+    # ── Reddit (read-only forum fetcher) ──────────────────────
+    REDDIT_CLIENT_ID: str = os.getenv("REDDIT_CLIENT_ID", "")
+    REDDIT_CLIENT_SECRET: str = os.getenv("REDDIT_CLIENT_SECRET", "")
+    REDDIT_USER_AGENT: str = os.getenv(
+        "REDDIT_USER_AGENT", "cactus-hvac-agent/0.1 (by u/anonymous)"
+    )
+
     # ── Model Selection ───────────────────────────────────────
     CACTUS_LLM_MODEL: str = os.getenv("CACTUS_LLM_MODEL", "google/gemma-4-E2B-it")
     CACTUS_FUNCTION_MODEL: str = os.getenv("CACTUS_FUNCTION_MODEL", "google/functiongemma-270m-it")

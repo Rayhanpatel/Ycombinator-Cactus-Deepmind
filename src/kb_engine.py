@@ -35,12 +35,22 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 class KBEngine:
     """Knowledge base search engine with embedding-based and tag-based retrieval."""
 
-    def __init__(self, kb_dir: str = "kb", index_file: str = "kb/kb_index.json"):
+    def __init__(
+        self,
+        kb_dir: str = "kb",
+        index_file: str = "kb/kb_index.json",
+        query_cache_size: int = 128,
+    ):
         self.kb_dir = Path(kb_dir)
         self.index_file = Path(index_file)
         self.entries: list[dict] = []
         self._embed_model = None
         self._embeddings_available = False
+        # Query-embedding cache: collapses duplicate queries to zero-cost.
+        # Plain dict + FIFO eviction keeps lifecycle predictable (no method
+        # lru_cache / gc surprises on long-lived singletons).
+        self._query_cache: dict[str, list[float]] = {}
+        self._query_cache_size = query_cache_size
 
     def load(self) -> None:
         """Load all KB entries. Prefer the pre-built index; fall back to individual files."""
@@ -85,11 +95,40 @@ class KBEngine:
 
     def _embed_query(self, query: str) -> Optional[list[float]]:
         """Embed a query string. Returns None if model unavailable."""
+        cached = self._query_cache.get(query)
+        if cached is not None:
+            return cached
+
         model = self._get_embed_model()
         if model is None:
             return None
-        embedding = model.encode(query, convert_to_numpy=True)
-        return embedding.tolist()
+        embedding = model.encode(query, convert_to_numpy=True).tolist()
+
+        # FIFO eviction — drop the oldest when full.
+        if len(self._query_cache) >= self._query_cache_size:
+            oldest = next(iter(self._query_cache))
+            self._query_cache.pop(oldest, None)
+        self._query_cache[query] = embedding
+        return embedding
+
+    def warmup(self, sample_query: str = "warmup") -> float:
+        """
+        Force the embedding model to load and run one throwaway encode so
+        the first real query doesn't pay the ~10s cold start. Safe to call
+        more than once; later calls are no-ops.
+
+        Returns the elapsed seconds (useful for logging startup cost).
+        """
+        import time
+        t0 = time.perf_counter()
+        if not self._embeddings_available:
+            return 0.0
+        if self._get_embed_model() is None:
+            return 0.0
+        self._embed_query(sample_query)
+        elapsed = time.perf_counter() - t0
+        logger.info(f"🔥 KB embedding model warmed ({elapsed:.2f}s)")
+        return elapsed
 
     def search(
         self,

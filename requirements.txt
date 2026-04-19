@@ -7,3 +7,6 @@ pyaudio>=0.2.13         # Alternative audio backend
 
 # ── KB Embeddings (offline build step) ───────────────────
 sentence-transformers>=2.2.0   # MiniLM embedding model
+
+# ── Forum fetching (optional) ────────────────────────────
+praw>=7.7.0                    # Reddit API — read-only, for web_ranker forum docs

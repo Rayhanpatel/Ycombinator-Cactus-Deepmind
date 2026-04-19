@@ -12,7 +12,12 @@
       "Bash(git push *)",
       "Bash(git rebase *)",
       "Bash(python -m pytest tests/test_web_ranker.py -q)",
-      "Bash(pip install *)"
+      "Bash(pip install *)",
+      "Bash(python -m pytest tests/test_reddit_fetcher.py tests/test_web_ranker.py -q)",
+      "Bash(python -m pytest tests/test_progressive_search.py tests/test_reddit_fetcher.py tests/test_web_ranker.py -q)",
+      "Bash(python -c \"import json; d=json.load\\(open\\('/Users/dag3ntl3man/YC/YC-26\\\\\\\\'/Ycombinator-Cactus-Deepmind/kb/kb_index.json'\\)\\); print\\('entries:', d.get\\('count'\\)\\); print\\('dim:', d.get\\('embedding_dim'\\)\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python -m pytest tests/ -q)"
     ]
   }
 }

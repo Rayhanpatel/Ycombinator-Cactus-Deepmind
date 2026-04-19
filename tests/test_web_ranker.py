@@ -5,7 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from src.web_ranker import WebDoc, WebRanker, _domain_of
+from src.web_ranker import (
+    WebDoc,
+    WebRanker,
+    _agreement,
+    _depth_bonus,
+    _domain_of,
+    _expertise,
+    count_affirmations,
+)
 
 
 def _fake_vec(bits: list[float]) -> list[float]:
@@ -113,6 +121,100 @@ def test_redundancy_penalty_with_stubbed_kb(tmp_state, monkeypatch):
     assert ranked["https://a.example/"].components["redundancy"] == pytest.approx(1.0)
     assert ranked["https://b.example/"].components["redundancy"] == pytest.approx(0.0)
     assert ranked["https://b.example/"].score > ranked["https://a.example/"].score
+
+
+def test_expertise_verified_flair_dominates():
+    doc = WebDoc(
+        url="https://reddit.com/r/HVAC/comments/x/y",
+        text="...",
+        author="techguy",
+        author_flair="Certified HVAC-Pro — 15yr commercial",
+    )
+    assert _expertise(doc) == 1.0
+
+
+def test_expertise_pro_indicator_mid_tier():
+    doc = WebDoc(
+        url="https://reddit.com/r/HVAC/comments/x/y",
+        text="...",
+        author="bob",
+        author_flair="Residential HVAC",
+    )
+    assert _expertise(doc) == pytest.approx(0.7, abs=0.01)
+
+
+def test_expertise_unknown_author_scores_zero():
+    assert _expertise(WebDoc(url="https://x/", text="...")) == 0.0
+
+
+def test_expertise_karma_and_age_stack():
+    doc = WebDoc(
+        url="https://x/",
+        text="...",
+        author="veteran",
+        author_karma=50_000,
+        author_account_age_days=1500,
+    )
+    # Karma ~ log10(50001)/10 ≈ 0.47 → capped to 0.4, plus 0.1 age → 0.5
+    assert 0.45 <= _expertise(doc) <= 0.55
+
+
+def test_depth_bonus_needs_parent_engagement():
+    """A depth-5 reply on a 0-upvote thread is still noise."""
+    doc = WebDoc(url="https://x/", text="...", depth=5, parent_upvotes=0)
+    assert _depth_bonus(doc) == 0.0
+
+
+def test_depth_bonus_rewards_deep_engaged_replies():
+    shallow = WebDoc(url="https://x/a", text="...", depth=1, parent_upvotes=100)
+    deep = WebDoc(url="https://x/b", text="...", depth=4, parent_upvotes=100)
+    assert _depth_bonus(deep) > _depth_bonus(shallow) > 0.0
+
+
+def test_agreement_saturates():
+    assert _agreement(WebDoc(url="https://x/", text="...", sibling_affirmations=0)) == 0.0
+    one = _agreement(WebDoc(url="https://x/", text="...", sibling_affirmations=1))
+    many = _agreement(WebDoc(url="https://x/", text="...", sibling_affirmations=50))
+    assert 0.0 < one < many <= 1.0
+
+
+def test_count_affirmations_matches_phrases():
+    siblings = [
+        "This is the fix, had the exact same symptom on my X14",
+        "completely unrelated comment about the weather",
+        "Can confirm — solved it for me too",
+        "eh, I don't know",
+    ]
+    assert count_affirmations(siblings) == 2
+
+
+def test_cracked_technician_outranks_manual_page(tmp_state):
+    """
+    The whole point of the forum extension: a deeply-nested pro comment
+    with sibling affirmations should beat a generic top-level page when
+    the cosine score is comparable.
+    """
+    ranker = WebRanker(kb_engine=None, state_file=tmp_state)
+    manual_page = WebDoc(
+        url="https://support.movincool.com/generic-faq",
+        text="General troubleshooting guidance.",
+    )
+    pro_reply = WebDoc(
+        url="https://reddit.com/r/HVAC/comments/abc/def",
+        text="On the X14 specifically the condensate pump float sticks when...",
+        author="hvacveteran",
+        author_flair="Certified HVAC-Pro",
+        author_karma=12000,
+        author_account_age_days=2200,
+        depth=3,
+        parent_upvotes=120,
+        sibling_affirmations=4,
+    )
+    ranked = ranker.rank("X14 condensate overflow", [manual_page, pro_reply])
+    assert ranked[0].doc.url.startswith("https://reddit.com")
+    assert ranked[0].components["expertise"] == 1.0
+    assert ranked[0].components["depth_bonus"] > 0
+    assert ranked[0].components["agreement"] > 0
 
 
 def test_kb_references_seed_authority(tmp_state):

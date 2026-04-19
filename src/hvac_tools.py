@@ -51,6 +51,9 @@ class HVACToolkit:
 
         self.kb = KBEngine(kb_dir=kb_dir, index_file=kb_index)
         self.kb.load()
+        # Pay the ~10s SentenceTransformer cold-start now, during app
+        # startup, so the first real query doesn't block on it.
+        self.kb.warmup()
 
         self.export_dir = Path(export_dir) if export_dir else DEFAULT_EXPORT_DIR
         self.export_dir.mkdir(parents=True, exist_ok=True)

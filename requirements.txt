@@ -4,3 +4,9 @@ sounddevice>=0.4.6      # Audio recording
 soundfile>=0.12.1       # Audio file I/O
 numpy>=1.24.0           # Audio processing
 pyaudio>=0.2.13         # Alternative audio backend
+
+# Web backend (Mac-browser demo path)
+fastapi>=0.110.0        # HTTP + WebSocket server
+uvicorn[standard]>=0.27.0  # ASGI server with websockets/httptools
+websockets>=12.0        # WS protocol lib (used by uvicorn[standard])
+python-multipart>=0.0.9 # Needed for form uploads if we add any

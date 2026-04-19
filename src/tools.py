@@ -1,174 +1,189 @@
 """
-Tool Definitions — function calling tools for the voice agent.
+HVAC tool dispatcher — 5 tools that Gemma 4 can call during an On-Site session.
 
-Define tools that the on-device model (FunctionGemma / Gemma 4) can invoke.
-Each tool follows the OpenAI-compatible function calling schema used by Cactus.
-
-Usage:
-    from src.tools import get_tools_json, execute_tool
-    tools_str = get_tools_json()
-    result = execute_tool("get_weather", {"location": "San Francisco"})
+Schemas are loaded from shared/hvac_tools.json (frozen contract shared with
+the iOS scaffold). Each session gets its own HVACToolDispatcher bound to
+a FindingsStore + KBStore so findings and safety state are per-tech.
 """
+
+from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
-from typing import Any, Callable
+from pathlib import Path
+from typing import Any
+
+from src.findings_store import FindingsStore
+from src.kb_store import KBStore, get_kb_store
 
 logger = logging.getLogger(__name__)
 
-# ══════════════════════════════════════════════════════════════
-# Tool Registry
-# ══════════════════════════════════════════════════════════════
-# Add your tools here. Each tool needs:
-#   1. A schema (for the model to know how to call it)
-#   2. An implementation function
 
-TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_current_time",
-            "description": "Get the current date and time",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "Get the current weather for a location",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "City name, e.g. 'San Francisco, CA'",
-                    },
-                },
-                "required": ["location"],
-            },
-        },
-    },
-    # ── Add more tool schemas below ──
-    # {
-    #     "type": "function",
-    #     "function": {
-    #         "name": "your_tool_name",
-    #         "description": "What this tool does",
-    #         "parameters": { ... },
-    #     },
-    # },
-]
-
-# ══════════════════════════════════════════════════════════════
-# Tool Implementations
-# ══════════════════════════════════════════════════════════════
+def _load_hvac_schemas() -> list[dict[str, Any]]:
+    repo_root = Path(__file__).resolve().parent.parent
+    path = repo_root / "shared" / "hvac_tools.json"
+    with path.open() as f:
+        data = json.load(f)
+    return data["tools"]
 
 
-def _get_current_time(**kwargs) -> str:
-    """Return the current date/time."""
-    now = datetime.now()
-    return json.dumps({
-        "date": now.strftime("%Y-%m-%d"),
-        "time": now.strftime("%H:%M:%S"),
-        "day": now.strftime("%A"),
-    })
-
-
-def _get_weather(location: str = "Unknown", **kwargs) -> str:
-    """
-    Stub weather tool — replace with a real API call.
-
-    TODO: Integrate with OpenWeatherMap, WeatherAPI, etc.
-    """
-    # Placeholder response
-    return json.dumps({
-        "location": location,
-        "temperature": "72°F",
-        "condition": "Sunny",
-        "humidity": "45%",
-        "note": "This is a stub — replace with a real weather API.",
-    })
-
-
-# Map tool names to their implementations
-_TOOL_REGISTRY: dict[str, Callable[..., str]] = {
-    "get_current_time": _get_current_time,
-    "get_weather": _get_weather,
-}
-
-
-# ══════════════════════════════════════════════════════════════
-# Public API
-# ══════════════════════════════════════════════════════════════
+TOOL_SCHEMAS: list[dict[str, Any]] = _load_hvac_schemas()
 
 
 def get_tools_json() -> str:
-    """Return the tool schemas as a JSON string for Cactus."""
+    """Return the HVAC tool schemas as a JSON string for Cactus."""
     return json.dumps(TOOL_SCHEMAS)
 
 
+class HVACToolDispatcher:
+    """Per-session dispatcher for the 5 HVAC tools."""
+
+    def __init__(
+        self,
+        kb_store: KBStore | None = None,
+        findings_store: FindingsStore | None = None,
+    ):
+        self.kb = kb_store or get_kb_store()
+        self.findings = findings_store or FindingsStore()
+
+    def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
+        """Run a tool by name. Always returns a JSON string."""
+        handler = getattr(self, f"_tool_{tool_name}", None)
+        if handler is None:
+            logger.error(f"Unknown tool: {tool_name}")
+            return json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+        try:
+            logger.info(f"🔧 {tool_name}({arguments})")
+            result = handler(**arguments)
+            return result if isinstance(result, str) else json.dumps(result)
+        except TypeError as e:
+            logger.error(f"{tool_name} bad arguments: {e}")
+            return json.dumps({"error": f"Invalid arguments: {e}"})
+        except Exception as e:
+            logger.error(f"{tool_name} failed: {e}")
+            return json.dumps({"error": str(e)})
+
+    def handle_function_calls(self, function_calls: list[dict]) -> list[dict]:
+        """Process a batch of function calls, return tool messages for next turn."""
+        out: list[dict] = []
+        for call in function_calls:
+            name = call.get("name", "")
+            args = call.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = {}
+            result = self.execute(name, args)
+            out.append({
+                "role": "tool",
+                "content": json.dumps({"name": name, "content": result}),
+            })
+        return out
+
+    # ── Tool handlers ────────────────────────────────────────────
+
+    def _tool_query_kb(
+        self,
+        query: str,
+        equipment_model: str | None = None,
+        top_k: int = 3,
+        **_: Any,
+    ) -> dict[str, Any]:
+        results = self.kb.search(query, equipment_model=equipment_model, top_k=top_k)
+        return {
+            "query": query,
+            "equipment_model": equipment_model,
+            "result_count": len(results),
+            "results": results,
+        }
+
+    def _tool_log_finding(
+        self,
+        location: str,
+        issue: str,
+        severity: str,
+        part_number: str | None = None,
+        notes: str | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        finding = self.findings.add_finding(
+            location=location,
+            issue=issue,
+            severity=severity,
+            part_number=part_number,
+            notes=notes,
+        )
+        return {"logged": True, "finding": finding.to_dict(), "finding_count": len(self.findings.findings)}
+
+    def _tool_flag_safety(
+        self,
+        hazard: str,
+        immediate_action: str,
+        level: str,
+        **_: Any,
+    ) -> dict[str, Any]:
+        alert = self.findings.add_safety(
+            hazard=hazard,
+            immediate_action=immediate_action,
+            level=level,
+        )
+        return {"flagged": True, "alert": alert.to_dict(), "is_stopped": self.findings.is_stopped}
+
+    def _tool_flag_scope_change(
+        self,
+        original_scope: str,
+        new_scope: str,
+        reason: str,
+        estimated_extra_time_minutes: int | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        change = self.findings.add_scope_change(
+            original_scope=original_scope,
+            new_scope=new_scope,
+            reason=reason,
+            estimated_extra_time_minutes=estimated_extra_time_minutes,
+        )
+        return {"flagged": True, "scope_change": change.to_dict()}
+
+    def _tool_close_job(
+        self,
+        summary: str,
+        parts_used: list[str],
+        follow_up_required: bool,
+        follow_up_notes: str | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        closure = self.findings.close_job(
+            summary=summary,
+            parts_used=parts_used,
+            follow_up_required=follow_up_required,
+            follow_up_notes=follow_up_notes,
+        )
+        return {"closed": True, "closure": closure.to_dict(), "session": self.findings.snapshot()}
+
+
+# ── Backward-compat shims for src/agent.py (legacy single-dispatcher path) ──
+
+_DEFAULT_DISPATCHER: HVACToolDispatcher | None = None
+
+
+def _default_dispatcher() -> HVACToolDispatcher:
+    global _DEFAULT_DISPATCHER
+    if _DEFAULT_DISPATCHER is None:
+        _DEFAULT_DISPATCHER = HVACToolDispatcher()
+    return _DEFAULT_DISPATCHER
+
+
 def execute_tool(tool_name: str, arguments: dict[str, Any]) -> str:
-    """
-    Execute a tool by name with the given arguments.
-
-    Returns the tool result as a JSON string.
-    """
-    if tool_name not in _TOOL_REGISTRY:
-        logger.error(f"Unknown tool: {tool_name}")
-        return json.dumps({"error": f"Unknown tool: {tool_name}"})
-
-    try:
-        logger.info(f"🔧 Executing tool: {tool_name}({arguments})")
-        result = _TOOL_REGISTRY[tool_name](**arguments)
-        logger.info(f"🔧 Tool result: {result}")
-        return result
-    except Exception as e:
-        logger.error(f"Tool execution error: {e}")
-        return json.dumps({"error": str(e)})
+    return _default_dispatcher().execute(tool_name, arguments)
 
 
 def handle_function_calls(function_calls: list[dict]) -> list[dict]:
-    """
-    Process a list of function calls from a Cactus completion response.
-
-    Args:
-        function_calls: List of dicts with 'name' and 'arguments' keys
-                       (from result["function_calls"])
-
-    Returns:
-        List of tool results formatted as message dicts for the next turn.
-    """
-    results = []
-    for call in function_calls:
-        name = call.get("name", "")
-        args = call.get("arguments", {})
-        if isinstance(args, str):
-            args = json.loads(args)
-
-        result = execute_tool(name, args)
-        results.append({
-            "role": "tool",
-            "content": json.dumps({"name": name, "content": result}),
-        })
-
-    return results
+    return _default_dispatcher().handle_function_calls(function_calls)
 
 
-def register_tool(name: str, schema: dict, implementation: Callable[..., str]) -> None:
-    """
-    Dynamically register a new tool at runtime.
-
-    Args:
-        name: Tool name (must match schema)
-        schema: Tool schema dict (OpenAI function calling format)
-        implementation: Function that takes **kwargs and returns a JSON string
-    """
-    TOOL_SCHEMAS.append(schema)
-    _TOOL_REGISTRY[name] = implementation
-    logger.info(f"🔧 Registered new tool: {name}")
+def register_tool(*_args: Any, **_kwargs: Any) -> None:
+    """Deprecated in the HVAC build; tools are defined in shared/hvac_tools.json."""
+    logger.warning("register_tool is a no-op; edit shared/hvac_tools.json instead.")

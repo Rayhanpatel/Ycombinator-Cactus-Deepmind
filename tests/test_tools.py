@@ -1,68 +1,140 @@
-"""Tests for the tools module."""
+"""Tests for the HVAC tools module."""
 
 import json
+
 from src.tools import (
-    get_tools_json,
+    HVACToolDispatcher,
+    TOOL_SCHEMAS,
     execute_tool,
+    get_tools_json,
     handle_function_calls,
-    register_tool,
 )
+from src.findings_store import FindingsStore
+from src.kb_store import KBStore
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _fresh_dispatcher() -> HVACToolDispatcher:
+    kb = KBStore(REPO_ROOT / "kb")
+    kb.load()
+    return HVACToolDispatcher(kb_store=kb, findings_store=FindingsStore())
+
+
+def test_schemas_loaded_from_shared():
+    """All 5 HVAC tool schemas should be present."""
+    names = {s["function"]["name"] for s in TOOL_SCHEMAS}
+    assert names == {
+        "query_kb",
+        "log_finding",
+        "flag_safety",
+        "flag_scope_change",
+        "close_job",
+    }
 
 
 def test_get_tools_json():
-    """Tool schemas should be valid JSON."""
-    tools_str = get_tools_json()
-    tools = json.loads(tools_str)
-    assert isinstance(tools, list)
-    assert len(tools) >= 2  # get_current_time + get_weather
+    tools = json.loads(get_tools_json())
+    assert len(tools) == 5
 
 
-def test_execute_known_tool():
-    """Executing a known tool should return valid JSON."""
-    result = execute_tool("get_current_time", {})
-    parsed = json.loads(result)
-    assert "date" in parsed
-    assert "time" in parsed
+def test_query_kb_returns_carrier():
+    d = _fresh_dispatcher()
+    out = json.loads(d.execute("query_kb", {"query": "Carrier 58STA intermittent cooling clicking"}))
+    assert out["result_count"] >= 1
+    assert out["results"][0]["id"] == "carrier-58sta-capacitor"
 
 
-def test_execute_unknown_tool():
-    """Executing an unknown tool should return an error."""
-    result = execute_tool("nonexistent_tool", {})
-    parsed = json.loads(result)
-    assert "error" in parsed
+def test_query_kb_gas_smell_routes_to_safety_entry():
+    d = _fresh_dispatcher()
+    out = json.loads(d.execute("query_kb", {"query": "gas smell furnace evacuate"}))
+    assert out["results"][0]["id"] == "generic-gas-furnace-gas-smell"
 
 
-def test_handle_function_calls():
-    """Should process a list of function calls."""
-    calls = [
-        {"name": "get_current_time", "arguments": {}},
-        {"name": "get_weather", "arguments": {"location": "NYC"}},
-    ]
-    results = handle_function_calls(calls)
-    assert len(results) == 2
-    assert all(r["role"] == "tool" for r in results)
+def test_log_finding_persists():
+    d = _fresh_dispatcher()
+    out = json.loads(d.execute(
+        "log_finding",
+        {"location": "outdoor condenser", "issue": "failed run capacitor", "severity": "major", "part_number": "P291-4554RS"},
+    ))
+    assert out["logged"] is True
+    assert out["finding_count"] == 1
+    assert d.findings.findings[0].part_number == "P291-4554RS"
 
 
-def test_register_tool():
-    """Dynamically registered tools should be callable."""
+def test_flag_safety_sets_stopped():
+    d = _fresh_dispatcher()
+    out = json.loads(d.execute(
+        "flag_safety",
+        {"hazard": "gas smell", "immediate_action": "evacuate and call utility", "level": "stop"},
+    ))
+    assert out["is_stopped"] is True
 
-    def my_tool(x: str = "", **kwargs) -> str:
-        return json.dumps({"echo": x})
 
-    schema = {
-        "type": "function",
-        "function": {
-            "name": "echo",
-            "description": "Echo input",
-            "parameters": {
-                "type": "object",
-                "properties": {"x": {"type": "string"}},
-                "required": ["x"],
-            },
+def test_flag_scope_change():
+    d = _fresh_dispatcher()
+    out = json.loads(d.execute(
+        "flag_scope_change",
+        {
+            "original_scope": "replace capacitor",
+            "new_scope": "also replace contactor",
+            "reason": "contactor visibly pitted",
+            "estimated_extra_time_minutes": 15,
         },
-    }
+    ))
+    assert out["flagged"] is True
+    assert out["scope_change"]["estimated_extra_time_minutes"] == 15
 
-    register_tool("echo", schema, my_tool)
-    result = execute_tool("echo", {"x": "hello"})
-    parsed = json.loads(result)
-    assert parsed["echo"] == "hello"
+
+def test_close_job_emits_snapshot():
+    d = _fresh_dispatcher()
+    d.execute("log_finding", {"location": "outdoor", "issue": "bulged capacitor", "severity": "major"})
+    out = json.loads(d.execute(
+        "close_job",
+        {
+            "summary": "Replaced run capacitor, unit cooling normally",
+            "parts_used": ["P291-4554RS"],
+            "follow_up_required": False,
+        },
+    ))
+    assert out["closed"] is True
+    assert out["session"]["closure"]["summary"].startswith("Replaced")
+    assert len(out["session"]["findings"]) == 1
+
+
+def test_unknown_tool_errors_cleanly():
+    d = _fresh_dispatcher()
+    out = json.loads(d.execute("nope", {}))
+    assert "error" in out
+
+
+def test_bad_arguments_error_message():
+    d = _fresh_dispatcher()
+    out = json.loads(d.execute("log_finding", {}))  # missing required
+    assert "error" in out
+
+
+def test_handle_function_calls_batch():
+    d = _fresh_dispatcher()
+    msgs = d.handle_function_calls([
+        {"name": "query_kb", "arguments": {"query": "Trane contactor humming"}},
+        {"name": "log_finding", "arguments": {"location": "disconnect", "issue": "pitted contactor", "severity": "major"}},
+    ])
+    assert len(msgs) == 2
+    assert all(m["role"] == "tool" for m in msgs)
+
+
+def test_legacy_global_execute_tool_still_works():
+    """Backward-compat shim used by src/agent.py should still route."""
+    result = json.loads(execute_tool("query_kb", {"query": "mini split blinking error"}))
+    assert result["result_count"] >= 1
+
+
+def test_legacy_handle_function_calls():
+    results = handle_function_calls([
+        {"name": "query_kb", "arguments": {"query": "goodman low refrigerant"}},
+    ])
+    assert len(results) == 1
+    assert results[0]["role"] == "tool"

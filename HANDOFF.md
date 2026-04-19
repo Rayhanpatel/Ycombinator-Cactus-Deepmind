@@ -113,6 +113,9 @@ On-device pitch: everything except the one explicit online-escalation tool runs 
 
 ## §4 System architecture
 
+**Deep version with 8 diagrams, tech stack, decisions: [Internal_docs/ARCHITECTURE.md](Internal_docs/ARCHITECTURE.md).** Summary below.
+
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  Browser  (Chrome on Mac  OR  iOS Safari on iPhone over hotspot)         │

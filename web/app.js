@@ -45,6 +45,8 @@ const rokidDisconnectBtn = $("rokid-disconnect");
 
 let ws;
 let currentAssistantMsg = null;
+let currentAssistantSource = null;
+let currentAssistantFinalOnly = false;
 let videoStream = null;
 let pendingFrameB64 = null;
 let frameInterval = null;
@@ -247,29 +249,36 @@ function addMessage(role, text = "") {
   return div;
 }
 
-function appendToAssistant(token) {
+function appendToAssistant(token, { speak = true } = {}) {
   if (!currentAssistantMsg) currentAssistantMsg = addMessage("assistant", "");
   currentAssistantMsg.textContent += token;
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
-  sentenceBuffer += token;
-  flushSentenceBuffer(false);
+  if (speak) {
+    sentenceBuffer += token;
+    flushSentenceBuffer(false);
+  }
 }
 
-function finishAssistant(finalText, stats) {
-  // If tokens already streamed into a bubble, KEEP the streamed text —
-  // do NOT overwrite with server's final_text. The server sometimes
-  // concatenates multiple passes (tool-call follow-ups) into final_text
-  // and that'd visually replace what the user has already read.
+function finishAssistant(finalText, stats, { source = "browser" } = {}) {
   if (currentAssistantMsg) {
+    if (currentAssistantFinalOnly && finalText) {
+      currentAssistantMsg.textContent = finalText;
+    }
     currentAssistantMsg = null;
   } else if (finalText) {
     addMessage("assistant", finalText);
   }
+  currentAssistantSource = null;
+  currentAssistantFinalOnly = false;
   if (stats && stats.ttft_ms) {
     ttftBadge.textContent = `TTFT ${Math.round(stats.ttft_ms)}ms · ${stats.decode_tps ? Math.round(stats.decode_tps) : "-"} tok/s`;
   }
   // Flush any remaining partial sentence to speech.
-  flushSentenceBuffer(true);
+  if (source !== "rokid") {
+    flushSentenceBuffer(true);
+  } else {
+    sentenceBuffer = "";
+  }
   if (!isSpeaking && speechQueue.length === 0) {
     setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
     if (handsFree) {
@@ -422,23 +431,31 @@ function connect() {
         break;
       case "user_turn":
         if (evt.source === "rokid" && evt.text) {
+          currentAssistantSource = "rokid";
+          currentAssistantFinalOnly = true;
           addMessage("user", evt.text);
         }
         break;
       case "token":
-        if (currentAssistantMsg === null) {
-          setStatus("thinking…", "thinking");
-          // As soon as ANY response token arrives, pause listening so the
-          // model's reply (streaming + TTS) can't trigger a rogue new turn
-          // via ambient audio / echo pickup. Resume after assistant_end.
-          suppressOnResult = true;
-          stopRecognition();
-          if (turnT0 && !turnFirstTokenT) {
-            turnFirstTokenT = performance.now();
-            console.log(`first token @ ${((turnFirstTokenT - turnT0) / 1000).toFixed(2)}s`);
+        {
+          const source = evt.source || currentAssistantSource || "browser";
+          currentAssistantSource = source;
+          currentAssistantFinalOnly = source === "rokid";
+          const speak = source !== "rokid";
+          if (currentAssistantMsg === null) {
+            setStatus("thinking…", "thinking");
+            // As soon as ANY response token arrives, pause listening so the
+            // model's reply (streaming + TTS) can't trigger a rogue new turn
+            // via ambient audio / echo pickup. Resume after assistant_end.
+            suppressOnResult = true;
+            stopRecognition();
+            if (turnT0 && !turnFirstTokenT) {
+              turnFirstTokenT = performance.now();
+              console.log(`first token @ ${((turnFirstTokenT - turnT0) / 1000).toFixed(2)}s`);
+            }
           }
+          appendToAssistant(evt.token, { speak });
         }
-        appendToAssistant(evt.token);
         break;
       case "tool_call":
         console.log("tool_call:", evt.name, evt.arguments);
@@ -455,7 +472,7 @@ function connect() {
           turnT0 = 0;
         }
         setGenerating(false);
-        finishAssistant(evt.text, { ttft_ms: evt.ttft_ms, decode_tps: evt.decode_tps });
+        finishAssistant(evt.text, { ttft_ms: evt.ttft_ms, decode_tps: evt.decode_tps }, { source: evt.source || currentAssistantSource || "browser" });
         break;
       case "error":
         addMessage("system-note", `[${evt.message}]`);
@@ -487,6 +504,8 @@ function sendUtterance(text) {
   addMessage("user", clean);
   setStatus("thinking…", "thinking");
   currentAssistantMsg = null;
+  currentAssistantSource = "browser";
+  currentAssistantFinalOnly = false;
   // Clear any lingering SR state so a delayed partial doesn't queue a
   // duplicate turn, and pause the mic while the model replies.
   finalTranscript = "";

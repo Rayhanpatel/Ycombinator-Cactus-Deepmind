@@ -48,6 +48,10 @@ logger = logging.getLogger(__name__)
 JPEG_QUALITY = 82
 PREVIEW_FPS = 4.0
 DEFAULT_AUDIO_SR = 48000
+LOCAL_IP_CACHE_TTL_S = 30.0
+_LOCAL_IP_CACHE: list[str] = []
+_LOCAL_IP_CACHE_AT = 0.0
+_LOCAL_IP_LAST_FAILURE_AT = 0.0
 
 
 def utc_now() -> str:
@@ -83,23 +87,52 @@ def encode_jpeg(rgb_frame: Any, *, width: int | None = None) -> bytes:
 
 
 def local_ipv4_addresses() -> list[str]:
+    global _LOCAL_IP_CACHE
+    global _LOCAL_IP_CACHE_AT
+    global _LOCAL_IP_LAST_FAILURE_AT
+
+    now = time.monotonic()
+    if _LOCAL_IP_CACHE and (now - _LOCAL_IP_CACHE_AT) < LOCAL_IP_CACHE_TTL_S:
+        return list(_LOCAL_IP_CACHE)
+    if not _LOCAL_IP_CACHE and _LOCAL_IP_LAST_FAILURE_AT and (now - _LOCAL_IP_LAST_FAILURE_AT) < LOCAL_IP_CACHE_TTL_S:
+        return []
+
     addresses: set[str] = set()
+    for target in ("8.8.8.8", "1.1.1.1"):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect((target, 80))
+                ip = sock.getsockname()[0]
+                if ip and not ip.startswith("127."):
+                    addresses.add(ip)
+        except OSError:
+            continue
+
     try:
         hostname = socket.gethostname()
-        for family, _, _, _, sockaddr in socket.getaddrinfo(
-            hostname,
-            None,
-            family=socket.AF_INET,
-            type=socket.SOCK_STREAM,
-        ):
-            if family != socket.AF_INET:
-                continue
-            ip = sockaddr[0]
-            if not ip.startswith("127."):
-                addresses.add(ip)
-    except OSError:
-        logger.exception("rokid: failed to resolve local addresses")
-    return sorted(addresses)
+        if hostname:
+            for family, _, _, _, sockaddr in socket.getaddrinfo(
+                hostname,
+                None,
+                family=socket.AF_INET,
+                type=socket.SOCK_DGRAM,
+            ):
+                if family != socket.AF_INET:
+                    continue
+                ip = sockaddr[0]
+                if ip and not ip.startswith("127."):
+                    addresses.add(ip)
+    except OSError as exc:
+        if not addresses and (now - _LOCAL_IP_LAST_FAILURE_AT) >= LOCAL_IP_CACHE_TTL_S:
+            logger.warning("rokid: could not resolve local IPv4 addresses: %s", exc)
+            _LOCAL_IP_LAST_FAILURE_AT = now
+
+    resolved = sorted(addresses)
+    if resolved:
+        _LOCAL_IP_CACHE = resolved
+        _LOCAL_IP_CACHE_AT = now
+        return list(resolved)
+    return list(_LOCAL_IP_CACHE)
 
 
 def hud_text(text: str, *, limit: int = 180) -> str:

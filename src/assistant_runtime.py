@@ -278,7 +278,7 @@ class AssistantSession:
         except Exception as exc:
             logger.warning("cactus_stop failed: %s", exc)
 
-    async def _complete_once(self, pass_idx: int = 0) -> dict[str, Any]:
+    async def _complete_once(self, pass_idx: int = 0, *, source: str = "browser") -> dict[str, Any]:
         loop = asyncio.get_running_loop()
         token_queue: asyncio.Queue[str] = asyncio.Queue()
 
@@ -314,11 +314,11 @@ class AssistantSession:
             while not task.done():
                 try:
                     token = await asyncio.wait_for(token_queue.get(), timeout=0.05)
-                    await self.emit({"type": "token", "token": token})
+                    await self.emit({"type": "token", "token": token, "source": source})
                 except asyncio.TimeoutError:
                     pass
             while not token_queue.empty():
-                await self.emit({"type": "token", "token": token_queue.get_nowait()})
+                await self.emit({"type": "token", "token": token_queue.get_nowait(), "source": source})
             raw = await task
 
         wall_ms = (time.time() - t_start) * 1000
@@ -397,7 +397,7 @@ class AssistantSession:
                 logger.info("turn %s cancelled before pass %s", self.turn_count, pass_idx)
                 break
             passes_done = pass_idx + 1
-            result = await self._complete_once(pass_idx=pass_idx)
+            result = await self._complete_once(pass_idx=pass_idx, source=source)
             if self.cancel_requested:
                 logger.info("turn %s cancelled mid-turn after pass %s", self.turn_count, pass_idx)
                 break

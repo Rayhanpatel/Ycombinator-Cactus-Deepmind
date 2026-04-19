@@ -164,10 +164,16 @@ function playNext() {
   u.pitch = 1.0;
   u.onstart = () => {
     isSpeaking = true;
-    // Suppress any mic activity while speaking (browser's own STT would pick us up).
-    suppressOnResult = true;
-    stopRecognition();
+    // Barge-in enabled: re-enable the mic the moment TTS starts so the user
+    // can cut in. The onresult handler watches `isSpeaking` and, when it
+    // catches a meaningful transcript, cancels TTS and treats it as the
+    // next turn. Chrome's echoCancellation filters most TTS echo; the
+    // MIN_UTTERANCE_CHARS gate filters the rest.
     setStatus("speaking…", "thinking");
+    if (handsFree) {
+      suppressOnResult = false;
+      startRecognition();
+    }
   };
   u.onend = () => {
     isSpeaking = false;
@@ -456,11 +462,25 @@ function initRecognition() {
       if (res.isFinal) finalTranscript += res[0].transcript + " ";
       else interimTranscript += res[0].transcript;
     }
+    const merged = (finalTranscript + interimTranscript).trim();
+
+    // Barge-in: if TTS is speaking AND the user has said something
+    // substantial enough to be real speech (not a short echo), cut TTS
+    // immediately. The silence timer will submit the full transcript a
+    // moment later in the normal flow.
+    if (isSpeaking && merged.length >= MIN_UTTERANCE_CHARS) {
+      console.log("[barge-in] cancelling TTS on mid-speak transcript:", merged.slice(0, 60));
+      window.speechSynthesis.cancel();
+      speechQueue.length = 0;
+      isSpeaking = false;
+      sentenceBuffer = "";
+    }
+
     // Any new audio resets the silence timer.
     if (silenceTimer) clearTimeout(silenceTimer);
     silenceTimer = setTimeout(submitIfReady, SILENCE_MS);
-    if (finalTranscript.trim() || interimTranscript.trim()) {
-      setStatus(`listening: "${(finalTranscript + interimTranscript).trim().slice(-60)}"`, "thinking");
+    if (merged) {
+      setStatus(`listening: "${merged.slice(-60)}"`, "thinking");
     }
   };
   r.onend = () => {
@@ -617,6 +637,20 @@ micBtn.addEventListener("click", toggleHandsFree);
 
 // ── Stop button: cancels in-flight generation ───────────────
 if (stopBtn) stopBtn.addEventListener("click", sendCancel);
+
+// ── Spacebar kill switch ────────────────────────────────────
+// When the model is generating (or TTS is speaking) and the user isn't typing
+// in an input, pressing Space cancels everything. Guaranteed cut-off even
+// when barge-in doesn't fire (e.g. noisy room, laptop speakers without
+// echo cancellation headroom, or hands-free is disabled).
+document.addEventListener("keydown", (e) => {
+  if (e.key !== " " && e.code !== "Space") return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (!isGenerating && !isSpeaking) return;
+  e.preventDefault();
+  sendCancel();
+});
 
 // ── Voice dropdown: override which SpeechSynthesis voice is used ────
 const voiceSelect = document.getElementById("voice-select");

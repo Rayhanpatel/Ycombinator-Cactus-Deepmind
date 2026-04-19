@@ -39,6 +39,7 @@ DerivedData/
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 ios/HVACCopilot_Xcode/
+ios/HVACCopilot/
 
 # Inspection data (regenerated per run)
 inspection_data.db

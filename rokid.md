@@ -27,17 +27,17 @@ Current assumptions:
 
 ### Components
 
-- [rokid/app/src/main/java/com/example/rokidiosbridge/MainActivity.kt](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/rokid/app/src/main/java/com/example/rokidiosbridge/MainActivity.kt)
+- `rokid/app/src/main/java/com/example/rokidiosbridge/MainActivity.kt`
   Handles permissions, reconnects, and the wearable HUD.
-- [rokid/app/src/main/java/com/example/rokidiosbridge/RokidBridgePeer.kt](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/rokid/app/src/main/java/com/example/rokidiosbridge/RokidBridgePeer.kt)
+- `rokid/app/src/main/java/com/example/rokidiosbridge/RokidBridgePeer.kt`
   Creates the WebRTC offer, publishes camera + mic, receives assistant audio, and handles the control data channel.
-- [src/main.py](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/src/main.py)
+- `src/main.py`
   FastAPI entrypoint. Hosts the web UI, browser WebSocket, Rokid `/session` endpoint, and Rokid state/preview APIs.
-- [src/rokid_bridge.py](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/src/rokid_bridge.py)
+- `src/rokid_bridge.py`
   Mac-side Rokid WebRTC bridge. Terminates the peer connection, keeps the latest preview frame, runs speech I/O, and streams synthesized audio back to the glasses.
-- [src/speech_io.py](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/src/speech_io.py)
+- `src/speech_io.py`
   Speech pipeline for Rokid mode: Silero VAD, `faster-whisper`, and Kokoro.
-- [src/assistant_runtime.py](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/src/assistant_runtime.py)
+- `src/assistant_runtime.py`
   Shared assistant session/runtime used by both browser and Rokid turns.
 
 ### Data flow
@@ -186,17 +186,17 @@ The HUD shows:
 
 ## Important files
 
-- [rokid/app/build.gradle.kts](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/rokid/app/build.gradle.kts)
+- `rokid/app/build.gradle.kts`
   Reads `BRIDGE_SESSION_URL` from `rokid/local.properties`.
-- [rokid/app/src/main/AndroidManifest.xml](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/rokid/app/src/main/AndroidManifest.xml)
+- `rokid/app/src/main/AndroidManifest.xml`
   Declares camera, mic, network, and wake-lock permissions.
-- [src/main.py](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/src/main.py)
+- `src/main.py`
   Main app server.
-- [src/rokid_bridge.py](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/src/rokid_bridge.py)
+- `src/rokid_bridge.py`
   Rokid WebRTC bridge and audio-return path.
-- [src/speech_io.py](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/src/speech_io.py)
+- `src/speech_io.py`
   Speech pipeline used for Rokid mode.
-- [web/index.html](/Users/t/ghq/github.com/Rayhanpatel/Ycombinator-Cactus-Deepmind/web/index.html)
+- `web/index.html`
   Browser UI layout including the Rokid panel.
 
 ## Troubleshooting

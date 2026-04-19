@@ -181,14 +181,19 @@ function maybeResumeReadyState() {
 }
 
 function clearRemoteAudio() {
-  if (remoteAudioEl) {
-    remoteAudioEl.pause();
-    remoteAudioEl.src = "";
-    remoteAudioEl = null;
+  const audio = remoteAudioEl;
+  const url = remoteAudioUrl;
+  remoteAudioEl = null;
+  remoteAudioUrl = "";
+
+  if (audio) {
+    audio.onplay = null;
+    audio.onended = null;
+    audio.onerror = null;
+    audio.pause();
   }
-  if (remoteAudioUrl) {
-    URL.revokeObjectURL(remoteAudioUrl);
-    remoteAudioUrl = "";
+  if (url) {
+    URL.revokeObjectURL(url);
   }
 }
 

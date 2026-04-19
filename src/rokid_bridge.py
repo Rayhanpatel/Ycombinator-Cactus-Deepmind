@@ -28,7 +28,7 @@ from src.speech_io import (
 try:  # pragma: no cover - dependency-gated
     from aiortc import MediaStreamTrack, RTCPeerConnection, RTCRtpReceiver, RTCSessionDescription
     from aiortc.rtcdatachannel import RTCDataChannel
-    from av import AudioFrame
+    from av import AudioFrame, AudioResampler
     from PIL import Image
 
     AIORTC_IMPORT_ERROR: Exception | None = None
@@ -39,6 +39,7 @@ except Exception as exc:  # pragma: no cover - dependency-gated
     RTCSessionDescription = None
     RTCDataChannel = None
     AudioFrame = None
+    AudioResampler = None
     Image = None
     AIORTC_IMPORT_ERROR = exc
 
@@ -108,23 +109,56 @@ def hud_text(text: str, *, limit: int = 180) -> str:
     return clean[: limit - 1].rstrip() + "…"
 
 
-def frame_to_mono_pcm16(frame: Any) -> tuple[bytes, int]:
-    array = frame.to_ndarray()
-    if array.ndim == 1:
-        mono = array
-    elif array.ndim == 2:
-        mono = array.mean(axis=0) if array.shape[0] <= 8 else array.mean(axis=1)
-    else:
-        mono = array.reshape(-1)
+class AudioFrameConverter:
+    def __init__(self) -> None:
+        self._resampler: AudioResampler | None = None
+        self._resampler_rate: int | None = None
+        self._source_format: str | None = None
+        self._source_layout: str | None = None
 
-    if np.issubdtype(mono.dtype, np.floating):
-        pcm16 = (mono.clip(-1.0, 1.0) * 32767.0).astype(np.int16)
-    elif mono.dtype == np.int16:
-        pcm16 = mono.astype(np.int16, copy=False)
-    else:
-        max_val = max(abs(int(np.iinfo(mono.dtype).min)), int(np.iinfo(mono.dtype).max))
-        pcm16 = (mono.astype(np.float32) / max_val * 32767.0).astype(np.int16)
-    return pcm16.tobytes(), int(getattr(frame, "sample_rate", 0) or DEFAULT_AUDIO_SR)
+    def convert(self, frame: Any) -> tuple[bytes, int, dict[str, Any]]:
+        sample_rate = int(getattr(frame, "sample_rate", 0) or getattr(frame, "rate", 0) or DEFAULT_AUDIO_SR)
+        frame_format = getattr(getattr(frame, "format", None), "name", "") or "unknown"
+        frame_layout = getattr(getattr(frame, "layout", None), "name", "") or "unknown"
+        channels = int(getattr(getattr(frame, "layout", None), "nb_channels", 0) or 0)
+
+        if (
+            self._resampler is None
+            or self._resampler_rate != sample_rate
+            or self._source_format != frame_format
+            or self._source_layout != frame_layout
+        ):
+            self._resampler = AudioResampler(format="s16", layout="mono", rate=sample_rate)
+            self._resampler_rate = sample_rate
+            self._source_format = frame_format
+            self._source_layout = frame_layout
+
+        out_frames = self._resampler.resample(frame)
+        if not out_frames:
+            return b"", sample_rate, {
+                "frame_format": frame_format,
+                "frame_layout": frame_layout,
+                "frame_channels": channels,
+                "frame_sample_rate": sample_rate,
+            }
+
+        chunks: list[bytes] = []
+        for out_frame in out_frames:
+            array = np.asarray(out_frame.to_ndarray()).reshape(-1)
+            if array.dtype != np.int16:
+                if np.issubdtype(array.dtype, np.floating):
+                    array = (array.clip(-1.0, 1.0) * 32767.0).astype(np.int16)
+                else:
+                    max_val = max(abs(int(np.iinfo(array.dtype).min)), int(np.iinfo(array.dtype).max))
+                    array = (array.astype(np.float32) / max_val * 32767.0).astype(np.int16)
+            chunks.append(array.astype(np.int16, copy=False).tobytes())
+
+        return b"".join(chunks), sample_rate, {
+            "frame_format": frame_format,
+            "frame_layout": frame_layout,
+            "frame_channels": channels,
+            "frame_sample_rate": sample_rate,
+        }
 
 
 class SynthAudioTrack(MediaStreamTrack):  # pragma: no cover - exercised via runtime
@@ -218,6 +252,10 @@ class RokidBridgeManager:
             "preview_height": 0,
             "last_frame_at": None,
             "audio_frames_seen": 0,
+            "audio_input_format": "",
+            "audio_input_layout": "",
+            "audio_input_channels": 0,
+            "audio_input_sample_rate": 0,
             "speech_state": "idle",
             "speech_backend_ready": False,
             "speech_backend_error": "",
@@ -244,6 +282,7 @@ class RokidBridgeManager:
         self._tts_task: asyncio.Task[None] | None = None
         self._tts_finish_task: asyncio.Task[None] | None = None
         self._tts_token = 0
+        self._audio_converter = AudioFrameConverter() if AudioResampler is not None else None
 
     async def prewarm(self) -> None:
         if not self._available:
@@ -341,6 +380,10 @@ class RokidBridgeManager:
                 device_name="",
                 last_pong_id="",
                 audio_frames_seen=0,
+                audio_input_format="",
+                audio_input_layout="",
+                audio_input_channels=0,
+                audio_input_sample_rate=0,
                 speech_state="listening",
                 tts_playing=False,
                 last_user_text="",
@@ -548,20 +591,48 @@ class RokidBridgeManager:
                     )
                 if self._speech_stream is None:
                     continue
-                pcm16_bytes, sample_rate = frame_to_mono_pcm16(frame)
+                pcm16_bytes, sample_rate, audio_meta = self._audio_converter.convert(frame)
+                if not pcm16_bytes:
+                    if frames_seen % 25 == 0:
+                        await self._mutate_state(
+                            session_token=session_token,
+                            audio_input_format=audio_meta.get("frame_format", ""),
+                            audio_input_layout=audio_meta.get("frame_layout", ""),
+                            audio_input_channels=audio_meta.get("frame_channels", 0),
+                            audio_input_sample_rate=audio_meta.get("frame_sample_rate", 0),
+                        )
+                    continue
                 result: FeedResult = self._speech_stream.feed_pcm16(pcm16_bytes, src_sr=sample_rate, channels=1)
                 last_debug = result.debug
                 if result.speech_started:
                     asyncio.create_task(self._handle_speech_start(session_token))
-                    await self._mutate_state(session_token=session_token, speech_debug=result.debug)
+                    await self._mutate_state(
+                        session_token=session_token,
+                        speech_debug=result.debug,
+                        audio_input_format=audio_meta.get("frame_format", ""),
+                        audio_input_layout=audio_meta.get("frame_layout", ""),
+                        audio_input_channels=audio_meta.get("frame_channels", 0),
+                        audio_input_sample_rate=audio_meta.get("frame_sample_rate", 0),
+                    )
                 elif result.speech_ended or result.utterances:
                     await self._mutate_state(
                         session_token=session_token,
                         speech_debug=result.debug,
+                        audio_input_format=audio_meta.get("frame_format", ""),
+                        audio_input_layout=audio_meta.get("frame_layout", ""),
+                        audio_input_channels=audio_meta.get("frame_channels", 0),
+                        audio_input_sample_rate=audio_meta.get("frame_sample_rate", 0),
                         message=f"Speech finalized ({len(result.utterances)} utterance{'s' if len(result.utterances) != 1 else ''})",
                     )
                 elif frames_seen % 25 == 0:
-                    await self._mutate_state(session_token=session_token, speech_debug=result.debug)
+                    await self._mutate_state(
+                        session_token=session_token,
+                        speech_debug=result.debug,
+                        audio_input_format=audio_meta.get("frame_format", ""),
+                        audio_input_layout=audio_meta.get("frame_layout", ""),
+                        audio_input_channels=audio_meta.get("frame_channels", 0),
+                        audio_input_sample_rate=audio_meta.get("frame_sample_rate", 0),
+                    )
                 if self._speech_queue is not None:
                     for utterance in result.utterances:
                         await self._speech_queue.put(utterance)

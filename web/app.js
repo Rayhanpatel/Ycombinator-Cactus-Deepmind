@@ -372,7 +372,11 @@ function updateRokidState(state) {
   rokidSpeech.textContent = state.speech_state || "idle";
   rokidLastUser.textContent = state.last_user_text || "—";
   rokidLastAssistant.textContent = state.last_assistant_text || "—";
-  rokidSpeechDebug.textContent = formatRokidSpeechDebug(state.speech_debug);
+  const audioFormat = [state.audio_input_format, state.audio_input_layout, state.audio_input_sample_rate || "", state.audio_input_channels || ""]
+    .filter(Boolean)
+    .join(" · ");
+  const debugText = formatRokidSpeechDebug(state.speech_debug);
+  rokidSpeechDebug.textContent = audioFormat ? `${audioFormat}\n${debugText}` : debugText;
 
   const examples = Array.isArray(state.session_url_examples) ? state.session_url_examples : [];
   rokidUrl.textContent = examples.length

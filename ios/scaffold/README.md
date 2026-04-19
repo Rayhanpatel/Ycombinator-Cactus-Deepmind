@@ -36,13 +36,30 @@ Ensure "Create groups" is selected and "Copy items if needed" is **unchecked** (
 Also replace the default `HVACCopilotApp.swift` and `ContentView.swift` Xcode created with the versions from this folder.
 
 ### 4. Add the Gemma 4 E4B model as a bundle resource
-- On the Mac, the Gemma 4 folder is already downloaded (from `test_gemma4.py` runs). Locate it under `~/.cache/huggingface/hub/models--google--gemma-4-E4B-it/snapshots/<hash>/` or wherever Cactus CLI saved it.
-- Copy the model folder into `ios/HVACCopilot/HVACCopilot/Resources/models/gemma-4-E4B-it/`
-- In Xcode: right-click `Resources` group → Add Files → pick `models/gemma-4-E4B-it/` → Add as **folder reference** (blue folder icon, not yellow group)
-- Confirm "Copy items if needed" is **unchecked** (avoid duplicating 4.5 GB)
+
+Model source on Mac: `/Users/rayhan/Desktop/Ycombinator-Cactus-Deepmind/cactus/weights/gemma-4-e4b-it` (~8.1 GB, Cactus unpacked format with audio + vision weights).
+
+Copy it into the project's Resources folder (symlinked to save space if you like):
+
+```bash
+mkdir -p ios/HVACCopilot/HVACCopilot/Resources/models
+ln -s /Users/rayhan/Desktop/Ycombinator-Cactus-Deepmind/cactus/weights/gemma-4-e4b-it \
+      ios/HVACCopilot/HVACCopilot/Resources/models/gemma-4-E4B-it
+```
+
+Then in Xcode:
+
+- Right-click the `Resources` group in the Project Navigator → **Add Files to "HVACCopilot"…**
+- Select `ios/HVACCopilot/HVACCopilot/Resources/models/gemma-4-E4B-it`
+- Add as **folder reference** (blue folder icon, not yellow group)
+- **Uncheck "Copy items if needed"** — we want the symlink, not an 8 GB duplicate
 - Target Membership: check `HVACCopilot`
 
-This folder is in `.gitignore` — each teammate copies the model locally.
+Verify: in the Build Phases tab → Copy Bundle Resources → `gemma-4-E4B-it` should appear. At runtime `Bundle.main.path(forResource: "gemma-4-E4B-it", ofType: nil)` resolves to the bundled copy.
+
+**First deploy to phone copies 8 GB over USB — expect 15–30 min.** Subsequent builds are seconds.
+
+Model path is in `.gitignore` — never commits.
 
 ### 5. Info.plist permissions (for T+4h when we wire mic/camera)
 Open the target → Info tab → add:

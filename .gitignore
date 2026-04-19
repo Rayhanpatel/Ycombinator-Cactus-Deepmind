@@ -30,6 +30,8 @@ models/
 # IDE
 .vscode/
 .idea/
+xcuserdata/
+*.xcuserstate
 *.swp
 *.swo
 *~

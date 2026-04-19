@@ -31,8 +31,10 @@ models/
 .vscode/
 .idea/
 *.xcuserstate
+xcuserdata/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
 *.swp
 *.swo
 *~

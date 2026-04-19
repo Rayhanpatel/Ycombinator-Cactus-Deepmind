@@ -126,6 +126,12 @@ function loadVoicesAndPick() {
 if ("speechSynthesis" in window) {
   window.speechSynthesis.onvoiceschanged = loadVoicesAndPick;
   loadVoicesAndPick();  // in case they're already cached
+  // iOS Safari sometimes fires onvoiceschanged late, or not at all until
+  // the first speak() call. Poll a few times so the voice list + dropdown
+  // populate even on iPhone without the user having to tap the mic first.
+  setTimeout(loadVoicesAndPick, 250);
+  setTimeout(loadVoicesAndPick, 1000);
+  setTimeout(loadVoicesAndPick, 2500);
 }
 
 function splitBySentence(text) {
@@ -585,9 +591,13 @@ function toggleHandsFree() {
     startRecognition();
     setStatus("hands-free · listening", "thinking");
     // Prime SpeechSynthesis with a user gesture so the FIRST reply can speak.
-    // (Chrome otherwise sometimes blocks autoplay on the initial utterance.)
+    // Chrome otherwise blocks autoplay on the initial utterance; iOS Safari
+    // requires an actual non-empty utterance spoken from inside a click
+    // handler to unlock the audio session. Use a single silent space at
+    // volume 0 — inaudible but counts as a real TTS call.
     try {
-      const prime = new SpeechSynthesisUtterance("");
+      const prime = new SpeechSynthesisUtterance(" ");
+      prime.volume = 0;
       window.speechSynthesis.speak(prime);
     } catch {}
   } else {

@@ -70,3 +70,9 @@ Thumbs.db
 # Audio temp files
 *.wav.tmp
 recordings/
+
+# Local HTTPS certs from mkcert (per-LAN)
+*.pem
+
+# Claude Code local settings
+.claude/

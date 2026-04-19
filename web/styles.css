@@ -58,6 +58,17 @@ header h1 {
   margin-left: auto;
 }
 
+.on-device-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(43, 212, 162, 0.12);
+  border: 1px solid rgba(43, 212, 162, 0.4);
+  padding: 4px 10px;
+  border-radius: 14px;
+  letter-spacing: 0.2px;
+}
+
 .safety-banner {
   background: linear-gradient(90deg, #ff4d4d, #b62020);
   padding: 14px 20px;

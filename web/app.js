@@ -175,8 +175,10 @@ function connect() {
         finishAssistant(evt.text, { ttft_ms: evt.ttft_ms, decode_tps: evt.decode_tps });
         break;
       case "error":
-        addMessage("system-note", `[error] ${evt.message}`);
-        setStatus("error", "error");
+        addMessage("system-note", `[${evt.message}]`);
+        setStatus("ready", "connected");
+        micBtn.classList.remove("listening");
+        currentAssistantMsg = null;
         break;
       case "pong":
         break;
@@ -195,7 +197,17 @@ function sendText(content) {
 function sendAudioPcm(pcmBase64) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   setStatus("thinking…", "thinking");
-  ws.send(JSON.stringify({ type: "audio", pcm_b64: pcmBase64 }));
+  // If the camera is enabled and we have a recent keyframe, ship both in one
+  // Gemma 4 multimodal forward pass. Otherwise fall back to audio-only.
+  if (videoStream && pendingFrameB64) {
+    ws.send(JSON.stringify({
+      type: "multimodal",
+      pcm_b64: pcmBase64,
+      jpeg_b64: pendingFrameB64,
+    }));
+  } else {
+    ws.send(JSON.stringify({ type: "audio", pcm_b64: pcmBase64 }));
+  }
   currentAssistantMsg = null;
 }
 

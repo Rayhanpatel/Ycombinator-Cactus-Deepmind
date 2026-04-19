@@ -1,5 +1,7 @@
 import SwiftUI
 
+// MARK: - Enums
+
 enum SessionStage: String {
     case idle = "Idle"
     case listening = "Listening"
@@ -9,98 +11,86 @@ enum SessionStage: String {
 }
 
 enum ModelState {
-    case ready
-    case listening
-    case reasoning
-    case review
+    case ready, listening, reasoning, review
 
     var title: String {
         switch self {
-        case .ready:
-            "Ready"
-        case .listening:
-            "Live mic"
-        case .reasoning:
-            "Reasoning"
-        case .review:
-            "Review"
+        case .ready: "Ready"
+        case .listening: "Live mic"
+        case .reasoning: "Reasoning"
+        case .review: "Review"
         }
     }
 
     var tint: Color {
         switch self {
-        case .ready:
-            AppTheme.success
-        case .listening:
-            AppTheme.listening
-        case .reasoning:
-            AppTheme.accent
-        case .review:
-            AppTheme.caution
+        case .ready: AppTheme.success
+        case .listening: AppTheme.listening
+        case .reasoning: AppTheme.accent
+        case .review: AppTheme.caution
         }
     }
 }
 
 enum SafetyLevel {
-    case clear
-    case caution
-    case stop
+    case clear, caution, stop
 
     var title: String {
         switch self {
-        case .clear:
-            "Clear"
-        case .caution:
-            "Watch"
-        case .stop:
-            "Stop"
+        case .clear: "Clear"
+        case .caution: "Watch"
+        case .stop: "Stop"
         }
     }
 
     var tint: Color {
         switch self {
-        case .clear:
-            AppTheme.success
-        case .caution:
-            AppTheme.caution
-        case .stop:
-            AppTheme.danger
+        case .clear: AppTheme.success
+        case .caution: AppTheme.caution
+        case .stop: AppTheme.danger
         }
     }
 }
 
 enum TranscriptSpeaker {
-    case technician
-    case assistant
-    case system
+    case technician, assistant, system
 
     var title: String {
         switch self {
-        case .technician:
-            "Tech"
-        case .assistant:
-            "Copilot"
-        case .system:
-            "System"
+        case .technician: "Tech"
+        case .assistant: "Copilot"
+        case .system: "System"
         }
     }
 
     var tint: Color {
         switch self {
-        case .technician:
-            AppTheme.listening
-        case .assistant:
-            AppTheme.accent
-        case .system:
-            AppTheme.caution
+        case .technician: AppTheme.listening
+        case .assistant: AppTheme.accent
+        case .system: AppTheme.caution
         }
     }
 }
 
-struct TranscriptLine: Identifiable {
+// MARK: - Chat message types
+
+enum ChatMessageKind {
+    case text(speaker: TranscriptSpeaker, text: String)
+    case hypothesis(MockHypothesis)
+    case coaching(CoachingData)
+    case finding(MockFinding)
+    case toolCall(name: String, detail: String)
+    case safetyAlert(level: SafetyLevel, message: String)
+}
+
+struct ChatMessage: Identifiable {
     let id = UUID()
-    let speaker: TranscriptSpeaker
-    let text: String
+    let kind: ChatMessageKind
+}
+
+struct CoachingData {
+    let title: String
+    let steps: [String]
 }
 
 struct MockFinding: Identifiable {
@@ -126,77 +116,75 @@ struct CloseJobDraft {
     let technicianNote: String
 }
 
+// MARK: - Scenario
+
 struct OnSiteScenario: Identifiable {
     let id: String
     let name: String
     let jobLabel: String
     let equipmentLabel: String
-    let sceneLabel: String
     let stage: SessionStage
     let modelState: ModelState
     let safetyLevel: SafetyLevel
-    let safetyMessage: String?
-    let transcriptLines: [TranscriptLine]
-    let hypothesis: MockHypothesis?
-    let findings: [MockFinding]
+    let messages: [ChatMessage]
     let closeJobDraft: CloseJobDraft
-    let transcriptFooter: String
+
+    /// Convenience: extract findings from messages
+    var findings: [MockFinding] {
+        messages.compactMap {
+            if case .finding(let f) = $0.kind { return f }
+            return nil
+        }
+    }
 }
 
+// MARK: - Scenarios
+
 enum PreviewScenarios {
+
+    // MARK: 1 — Idle (tech just arrived)
     static let idleCarrier = OnSiteScenario(
         id: "carrier-idle",
         name: "Carrier idle walkthrough",
         jobLabel: "Job #2041 • Roof package unit",
         equipmentLabel: "Carrier 58STA090",
-        sceneLabel: "Return grille, service panel in frame",
         stage: .idle,
         modelState: .ready,
         safetyLevel: .clear,
-        safetyMessage: nil,
-        transcriptLines: [
-            TranscriptLine(speaker: .system, text: "System ready. Point the camera at the unit and begin when the tech is in place."),
-            TranscriptLine(speaker: .assistant, text: "I can track findings, surface the top hypothesis, and prep the close-out summary.")
+        messages: [
+            ChatMessage(kind: .text(speaker: .system, text: "Session started. Point the camera at the unit.")),
+            ChatMessage(kind: .text(speaker: .assistant, text: "Ready when you are. I can see the camera feed — describe the symptom and I'll start matching against the knowledge base.")),
         ],
-        hypothesis: nil,
-        findings: [],
         closeJobDraft: CloseJobDraft(
             diagnosis: "Awaiting technician walkthrough",
             fixApplied: "None yet",
             partsUsed: [],
             timeOnSiteMinutes: 0,
             technicianNote: "No close-out draft yet."
-        ),
-        transcriptFooter: "Idle state for first-screen review"
+        )
     )
 
+    // MARK: 2 — Listening (tech describing symptom)
     static let traneListening = OnSiteScenario(
         id: "trane-listening",
         name: "Trane active intake",
         jobLabel: "Job #2047 • Intermittent cooling",
         equipmentLabel: "Trane XR14 condenser",
-        sceneLabel: "Condenser fan centered, wiring compartment visible",
         stage: .listening,
         modelState: .listening,
         safetyLevel: .clear,
-        safetyMessage: nil,
-        transcriptLines: [
-            TranscriptLine(speaker: .technician, text: "I’m hearing a chattering contactor and the fan pauses before the compressor drops out."),
-            TranscriptLine(speaker: .assistant, text: "Listening for symptom details. Keep the disconnect and capacitor label in frame.")
-        ],
-        hypothesis: MockHypothesis(
-            title: "Weak contactor coil",
-            confidence: 62,
-            rationale: "Audio symptoms and visible wiring wear both suggest unstable pull-in on the contactor.",
-            nextStep: "Inspect contactor face for pitting and confirm line voltage before replacement."
-        ),
-        findings: [
-            MockFinding(
-                title: "Pitted contact face",
-                location: "Contactor compartment",
-                severity: .caution,
-                note: "Surface pitting visible on the moving contact."
-            )
+        messages: [
+            ChatMessage(kind: .text(speaker: .system, text: "Session started.")),
+            ChatMessage(kind: .text(speaker: .assistant, text: "Camera feed active. Go ahead — what are you seeing?")),
+            ChatMessage(kind: .text(speaker: .technician, text: "I'm hearing a chattering contactor and the fan pauses before the compressor drops out.")),
+            ChatMessage(kind: .toolCall(name: "query_kb", detail: "Searching: chattering contactor, fan pause, compressor dropout")),
+            ChatMessage(kind: .hypothesis(MockHypothesis(
+                title: "Weak contactor coil",
+                confidence: 62,
+                rationale: "Audio symptoms and visible wiring wear suggest unstable pull-in on the contactor.",
+                nextStep: "Inspect contactor face for pitting and confirm line voltage."
+            ))),
+            ChatMessage(kind: .text(speaker: .assistant, text: "Keep the disconnect and capacitor label in frame while I listen for more detail.")),
         ],
         closeJobDraft: CloseJobDraft(
             diagnosis: "Probable contactor failure",
@@ -204,83 +192,98 @@ enum PreviewScenarios {
             partsUsed: ["Contactor 2-pole 40A"],
             timeOnSiteMinutes: 18,
             technicianNote: "Tech still collecting measurements."
-        ),
-        transcriptFooter: "Listening state with live hypothesis"
+        )
     )
 
+    // MARK: 3 — Responding (main demo flow)
     static let carrierResponding = OnSiteScenario(
         id: "carrier-responding",
         name: "Carrier guided diagnosis",
         jobLabel: "Job #2054 • Clicking before shutoff",
         equipmentLabel: "Carrier 58STA120",
-        sceneLabel: "Blower cabinet open, run capacitor label visible",
         stage: .assistantResponding,
         modelState: .reasoning,
         safetyLevel: .clear,
-        safetyMessage: nil,
-        transcriptLines: [
-            TranscriptLine(speaker: .technician, text: "I’m seeing intermittent cooling on a Carrier 58STA with a clicking sound before shutoff."),
-            TranscriptLine(speaker: .assistant, text: "Top match is a failed run capacitor. Check for bulging and verify capacitance against the 45 microfarad label."),
-            TranscriptLine(speaker: .assistant, text: "Log the capacitor dimensions if you swap it so the close-out stays structured.")
-        ],
-        hypothesis: MockHypothesis(
-            title: "Failed run capacitor",
-            confidence: 87,
-            rationale: "The symptom pair of clicking before shutoff plus intermittent cooling strongly matches prior Carrier capacitor failures.",
-            nextStep: "Meter the capacitor, compare against rated value, then inspect for bulging or leaking."
-        ),
-        findings: [
-            MockFinding(
+        messages: [
+            ChatMessage(kind: .text(speaker: .system, text: "Session started. Camera and mic active.")),
+            ChatMessage(kind: .text(speaker: .technician, text: "I'm seeing intermittent cooling on a Carrier 58STA with a clicking sound before shutoff.")),
+            ChatMessage(kind: .toolCall(name: "query_kb", detail: "Matched: Carrier 58STA capacitor failure (3 prior cases)")),
+            ChatMessage(kind: .hypothesis(MockHypothesis(
+                title: "Failed run capacitor",
+                confidence: 87,
+                rationale: "Clicking before shutoff plus intermittent cooling strongly matches prior Carrier capacitor failures in the knowledge base.",
+                nextStep: "Meter the capacitor and compare against the 45 µF rated value."
+            ))),
+            ChatMessage(kind: .text(speaker: .assistant, text: "Top match is a failed run capacitor — 45 µF, 370V. Two other techs reported the same pattern on this model.")),
+            ChatMessage(kind: .coaching(CoachingData(
+                title: "Verify & replace capacitor",
+                steps: [
+                    "Kill power at the disconnect",
+                    "Remove the service panel",
+                    "Discharge capacitor with insulated screwdriver",
+                    "Photo the wire positions before disconnect",
+                    "Meter capacitance — expect 45 µF ± 6%",
+                    "Swap capacitor, match wire positions",
+                    "Restore panel and power",
+                    "Verify cooling: supply vent should read 15–20°F below return"
+                ]
+            ))),
+            ChatMessage(kind: .text(speaker: .technician, text: "Capacitor's visibly bulged.")),
+            ChatMessage(kind: .finding(MockFinding(
                 title: "Capacitor bulge",
                 location: "Electrical compartment",
                 severity: .caution,
                 note: "Can top visibly domed above normal profile."
-            ),
-            MockFinding(
+            ))),
+            ChatMessage(kind: .text(speaker: .assistant, text: "That confirms it. Swap it out, restore power, and verify supply vent is 15–20°F below return temp.")),
+            ChatMessage(kind: .finding(MockFinding(
                 title: "Loose spade connector",
                 location: "Compressor lead",
                 severity: .clear,
                 note: "Connector seated but should be tightened during replacement."
-            )
+            ))),
+            ChatMessage(kind: .text(speaker: .assistant, text: "Log the capacitor dimensions when you swap it so the close-out record stays structured.")),
         ],
         closeJobDraft: CloseJobDraft(
             diagnosis: "Run capacitor out of spec",
             fixApplied: "Replace with matching 45/5 capacitor and secure spade connector",
-            partsUsed: ["45/5 uF dual run capacitor", "Female spade connector"],
+            partsUsed: ["45/5 µF dual run capacitor", "Female spade connector"],
             timeOnSiteMinutes: 41,
             technicianNote: "Cooling restored after replacement and restart."
-        ),
-        transcriptFooter: "Assistant response state for the main demo flow"
+        )
     )
 
+    // MARK: 4 — Safety alert
     static let safetyScenario = OnSiteScenario(
         id: "safety-alert",
         name: "Electrical safety stop",
         jobLabel: "Job #2062 • Service disconnect inspection",
         equipmentLabel: "Lennox rooftop gas pack",
-        sceneLabel: "Disconnect box open, exposed conductors in view",
         stage: .safetyAlert,
         modelState: .review,
         safetyLevel: .stop,
-        safetyMessage: "Safety stop: exposed conductors near the disconnect. Kill power and verify lockout before touching the cabinet.",
-        transcriptLines: [
-            TranscriptLine(speaker: .system, text: "Tool event: `flag_safety` raised for electrical hazard."),
-            TranscriptLine(speaker: .assistant, text: "Pause troubleshooting. Confirm power is isolated before the walkthrough continues.")
-        ],
-        hypothesis: nil,
-        findings: [
-            MockFinding(
+        messages: [
+            ChatMessage(kind: .text(speaker: .system, text: "Session started.")),
+            ChatMessage(kind: .text(speaker: .technician, text: "Opening the disconnect box now to check the wiring.")),
+            ChatMessage(kind: .text(speaker: .assistant, text: "I can see the disconnect in frame. Proceeding with visual inspection.")),
+            ChatMessage(kind: .toolCall(name: "flag_safety", detail: "Electrical hazard detected in camera feed")),
+            ChatMessage(kind: .safetyAlert(
+                level: .stop,
+                message: "Exposed conductors near the disconnect. Kill power and verify lockout before touching the cabinet."
+            )),
+            ChatMessage(kind: .finding(MockFinding(
                 title: "Exposed conductor",
                 location: "Disconnect box",
                 severity: .stop,
                 note: "Insulation is split near the lug entry."
-            ),
-            MockFinding(
+            ))),
+            ChatMessage(kind: .finding(MockFinding(
                 title: "Missing warning label",
                 location: "Exterior panel",
                 severity: .caution,
                 note: "No visible lockout warning on access cover."
-            )
+            ))),
+            ChatMessage(kind: .text(speaker: .assistant, text: "Pause all troubleshooting. Confirm power is isolated before continuing.")),
         ],
         closeJobDraft: CloseJobDraft(
             diagnosis: "Electrical hazard present",
@@ -288,52 +291,53 @@ enum PreviewScenarios {
             partsUsed: ["LOTO tag"],
             timeOnSiteMinutes: 12,
             technicianNote: "Work paused pending safe power isolation."
-        ),
-        transcriptFooter: "Safety interrupt review"
+        )
     )
 
+    // MARK: 5 — Close job
     static let closeJobScenario = OnSiteScenario(
         id: "close-job-review",
         name: "Close job summary",
         jobLabel: "Job #2054 • Cooling restored",
         equipmentLabel: "Carrier 58STA120",
-        sceneLabel: "Post-repair unit with panel reinstalled",
         stage: .closeJobReview,
         modelState: .review,
         safetyLevel: .clear,
-        safetyMessage: nil,
-        transcriptLines: [
-            TranscriptLine(speaker: .assistant, text: "Close-out draft is ready. Confirm diagnosis, parts, and total time on site."),
-            TranscriptLine(speaker: .technician, text: "Cooling is stable now. Lock in the capacitor replacement and first-time fix.")
-        ],
-        hypothesis: MockHypothesis(
-            title: "Repair complete",
-            confidence: 94,
-            rationale: "Follow-up response and stable cooling indicate the initial diagnosis resolved the issue.",
-            nextStep: "Review the summary sheet, then export the resolution record."
-        ),
-        findings: [
-            MockFinding(
+        messages: [
+            ChatMessage(kind: .text(speaker: .system, text: "Session started. Camera and mic active.")),
+            ChatMessage(kind: .text(speaker: .technician, text: "Intermittent cooling on a Carrier 58STA, clicking before shutoff.")),
+            ChatMessage(kind: .toolCall(name: "query_kb", detail: "Matched: Carrier 58STA capacitor failure")),
+            ChatMessage(kind: .hypothesis(MockHypothesis(
+                title: "Failed run capacitor",
+                confidence: 87,
+                rationale: "Clicking + intermittent cooling matches 3 prior cases.",
+                nextStep: "Meter capacitor against 45 µF rated value."
+            ))),
+            ChatMessage(kind: .text(speaker: .assistant, text: "Top match is a failed run capacitor.")),
+            ChatMessage(kind: .text(speaker: .technician, text: "Capacitor is bulged. Swapping now.")),
+            ChatMessage(kind: .finding(MockFinding(
                 title: "Run capacitor replaced",
                 location: "Electrical compartment",
                 severity: .clear,
                 note: "New 45/5 capacitor installed and leads reseated."
-            ),
-            MockFinding(
+            ))),
+            ChatMessage(kind: .text(speaker: .technician, text: "Done. Cooling at 38 at the vent, 25 minutes on site.")),
+            ChatMessage(kind: .finding(MockFinding(
                 title: "Restart verified",
                 location: "System operation",
                 severity: .clear,
                 note: "Compressor and fan held through restart cycle."
-            )
+            ))),
+            ChatMessage(kind: .toolCall(name: "close_job", detail: "Generating structured resolution record")),
+            ChatMessage(kind: .text(speaker: .assistant, text: "Close-out draft is ready. Diagnosis, parts, and time logged. Tap Close Job to review and export.")),
         ],
         closeJobDraft: CloseJobDraft(
             diagnosis: "Failed run capacitor causing intermittent cooling",
-            fixApplied: "Replaced 45/5 dual run capacitor and tightened compressor lead connection",
-            partsUsed: ["45/5 uF dual run capacitor", "1/4 in female spade connector"],
+            fixApplied: "Replaced 45/5 dual run capacitor and tightened compressor lead",
+            partsUsed: ["45/5 µF dual run capacitor", "1/4 in female spade connector"],
             timeOnSiteMinutes: 43,
             technicianNote: "Customer advised to monitor overnight cycle. First-time fix achieved."
-        ),
-        transcriptFooter: "Review sheet state"
+        )
     )
 
     static let all: [OnSiteScenario] = [

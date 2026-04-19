@@ -7,10 +7,8 @@ struct OnSiteView: View {
 
         var id: Int {
             switch self {
-            case .closeJob:
-                1
-            case .scenarios:
-                2
+            case .closeJob: 1
+            case .scenarios: 2
             }
         }
     }
@@ -19,58 +17,39 @@ struct OnSiteView: View {
     @State private var activeSheet: ActiveSheet?
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                CameraPlaceholderView(scenario: selectedScenario)
-                    .ignoresSafeArea()
-            }
-            .overlay(alignment: .top) {
-                VStack(spacing: 10) {
-                    TopStatusBar(
-                        scenario: selectedScenario,
-                        onScenarioTap: { activeSheet = .scenarios }
-                    )
+        VStack(spacing: 0) {
+            // Zone 1: Status bar
+            TopStatusBar(
+                scenario: selectedScenario,
+                onScenarioTap: { activeSheet = .scenarios }
+            )
 
-                    if let safetyMessage = selectedScenario.safetyMessage {
-                        SafetyBanner(level: selectedScenario.safetyLevel, message: safetyMessage)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, geometry.safeAreaInsets.top + 8)
-            }
-            .overlay(alignment: .top) {
-                if let hypothesis = selectedScenario.hypothesis {
-                    HypothesisCard(hypothesis: hypothesis)
-                        .padding(.horizontal, 16)
-                        .padding(.top, geometry.safeAreaInsets.top + topOverlayOffset)
-                }
-            }
-            .overlay(alignment: .bottom) {
-                VStack(spacing: 10) {
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(spacing: 10) {
-                            TranscriptCard(
-                                lines: selectedScenario.transcriptLines,
-                                stage: selectedScenario.stage,
-                                footer: selectedScenario.transcriptFooter
-                            )
+            // Zone 2: Compact camera strip
+            CameraPlaceholderView(scenario: selectedScenario)
+                .frame(height: 130)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(AppTheme.borderSubtle, lineWidth: 0.75)
+                )
+                .padding(.horizontal, 14)
+                .padding(.bottom, 4)
 
-                            FindingsDrawer(findings: selectedScenario.findings)
-                        }
-                        .padding(.top, 8)
-                    }
-                    .frame(maxHeight: scrollContentHeight(for: geometry.size.height, bottomInset: geometry.safeAreaInsets.bottom))
-                    .scrollBounceBehavior(.basedOnSize)
+            // Zone 3: Chat timeline (fills remaining space)
+            ChatTimeline(
+                messages: selectedScenario.messages,
+                stage: selectedScenario.stage
+            )
+            .frame(maxHeight: .infinity)
 
-                    BottomActionBar(
-                        stage: selectedScenario.stage,
-                        onCloseJobTap: { activeSheet = .closeJob }
-                    )
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, max(geometry.safeAreaInsets.bottom, 12))
-            }
+            // Zone 4: Voice input bar
+            VoiceInputBar(
+                stage: selectedScenario.stage,
+                onCloseJobTap: { activeSheet = .closeJob }
+            )
         }
+        .background(AppTheme.night.ignoresSafeArea())
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: selectedScenario.id)
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .closeJob:
@@ -79,20 +58,6 @@ struct OnSiteView: View {
                 ScenarioPickerView(selectedScenario: $selectedScenario)
             }
         }
-    }
-
-    private var topOverlayOffset: CGFloat {
-        switch selectedScenario.stage {
-        case .safetyAlert:
-            146
-        default:
-            126
-        }
-    }
-
-    private func scrollContentHeight(for screenHeight: CGFloat, bottomInset: CGFloat) -> CGFloat {
-        let available = screenHeight - bottomInset
-        return min(max(available * 0.24, 176), 236)
     }
 }
 

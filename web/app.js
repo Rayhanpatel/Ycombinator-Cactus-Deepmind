@@ -31,6 +31,16 @@ const camEl = $("cam");
 const camBtn = $("cam-btn");
 const camCanvas = $("cam-canvas");
 const stopBtn = $("stop-btn");
+const rokidPreview = $("rokid-preview");
+const rokidEmpty = $("rokid-empty");
+const rokidUrl = $("rokid-url");
+const rokidConnection = $("rokid-connection");
+const rokidIce = $("rokid-ice");
+const rokidControl = $("rokid-control");
+const rokidSpeech = $("rokid-speech");
+const rokidLastUser = $("rokid-last-user");
+const rokidLastAssistant = $("rokid-last-assistant");
+const rokidDisconnectBtn = $("rokid-disconnect");
 
 let ws;
 let currentAssistantMsg = null;
@@ -38,6 +48,7 @@ let videoStream = null;
 let pendingFrameB64 = null;
 let frameInterval = null;
 let isGenerating = false;   // true from send → assistant_end
+let rokidPreviewKey = "";
 
 // ── Web Speech API (STT) ────────────────────────────────────
 // Wine_Voice_AI pattern: Chrome does transcription in-browser. No PCM goes
@@ -342,6 +353,36 @@ function updateSession(state) {
   }
 }
 
+function updateRokidState(state) {
+  if (!state) return;
+  rokidConnection.textContent = state.connection_state || "idle";
+  rokidIce.textContent = state.ice_connection_state || "new";
+  rokidControl.textContent = state.control_channel_state || "closed";
+  rokidSpeech.textContent = state.speech_state || "idle";
+  rokidLastUser.textContent = state.last_user_text || "—";
+  rokidLastAssistant.textContent = state.last_assistant_text || "—";
+
+  const examples = Array.isArray(state.session_url_examples) ? state.session_url_examples : [];
+  rokidUrl.textContent = examples.length
+    ? `Wearable URL: ${examples[0]}`
+    : (state.dependency_error ? `Rokid unavailable: ${state.dependency_error}` : "Wearable URL unavailable");
+
+  const streamUrl = state.preview_stream_url;
+  const nextKey = `${streamUrl || ""}|${state.session_started_at || ""}|${state.preview_sequence || 0}`;
+  if (streamUrl && state.session_active && state.preview_sequence > 0) {
+    if (rokidPreviewKey !== nextKey) {
+      rokidPreview.src = `${streamUrl}?session=${encodeURIComponent(state.session_started_at || "idle")}`;
+      rokidPreviewKey = nextKey;
+    }
+    rokidPreview.classList.remove("hidden");
+    rokidEmpty.classList.add("hidden");
+  } else {
+    rokidPreview.classList.add("hidden");
+    rokidEmpty.classList.remove("hidden");
+    rokidEmpty.textContent = state.session_active ? "Waiting for first camera frame…" : "Waiting for Rokid glasses…";
+  }
+}
+
 // ── WS client ───────────────────────────────────────────────
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -359,6 +400,14 @@ function connect() {
       case "ready":
         setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
         if (evt.kb_entries != null) kbBadge.textContent = `${evt.kb_entries} KB entries`;
+        break;
+      case "rokid_state":
+        updateRokidState(evt.state);
+        break;
+      case "user_turn":
+        if (evt.source === "rokid" && evt.text) {
+          addMessage("user", evt.text);
+        }
         break;
       case "token":
         if (currentAssistantMsg === null) {
@@ -599,6 +648,17 @@ resetBtn.addEventListener("click", () => {
   safetyBanner.classList.add("hidden");
   addMessage("system-note", "Session reset.");
 });
+
+if (rokidDisconnectBtn) {
+  rokidDisconnectBtn.addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/rokid/session/disconnect", { method: "POST" });
+      if (!res.ok) throw new Error(`Disconnect failed: ${res.status}`);
+    } catch (err) {
+      addMessage("system-note", `[rokid disconnect failed: ${err.message}]`);
+    }
+  });
+}
 
 // ── Camera ──────────────────────────────────────────────────
 camBtn.addEventListener("click", async () => {

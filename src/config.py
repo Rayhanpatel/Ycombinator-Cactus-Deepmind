@@ -38,6 +38,13 @@ class Config:
     # ── Audio ─────────────────────────────────────────────────
     AUDIO_SAMPLE_RATE: int = int(os.getenv("AUDIO_SAMPLE_RATE", "16000"))
     VAD_SENSITIVITY: float = float(os.getenv("VAD_SENSITIVITY", "0.5"))
+    SPEECH_LANGUAGE: str = os.getenv("SPEECH_LANGUAGE", "en")
+    SPEECH_STT_MODEL: str = os.getenv("SPEECH_STT_MODEL", "small.en")
+    SPEECH_STT_DEVICE: str = os.getenv("SPEECH_STT_DEVICE", "cpu")
+    SPEECH_STT_COMPUTE_TYPE: str = os.getenv("SPEECH_STT_COMPUTE_TYPE", "int8")
+    SPEECH_TTS_LANG_CODE: str = os.getenv("SPEECH_TTS_LANG_CODE", "a")
+    SPEECH_TTS_VOICE: str = os.getenv("SPEECH_TTS_VOICE", "af_heart")
+    ROKID_PUBLIC_PORT: int = int(os.getenv("ROKID_PUBLIC_PORT", os.getenv("PORT", "8000")))
 
     # ── Paths ─────────────────────────────────────────────────
     PROJECT_ROOT: Path = _project_root

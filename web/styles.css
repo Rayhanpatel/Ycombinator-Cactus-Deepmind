@@ -255,6 +255,64 @@ button.secondary {
   font-size: 12px;
 }
 
+.rokid-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rokid-preview-wrap {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rokid-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rokid-empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 18px;
+  text-align: center;
+}
+
+.rokid-url {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.rokid-copy {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.rokid-copy-head {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.rokid-copy-body {
+  font-size: 12px;
+  line-height: 1.4;
+  min-height: 16px;
+}
+
 .tool-log {
   overflow-y: auto;
   display: flex;

@@ -53,6 +53,11 @@ SYSTEM_PROMPT = (
     "You are HVACCopilot — an on-device coach for HVAC field technicians running on Gemma 4. "
     "You see what the tech sees and hear what they describe. Be concise — they are working with their hands.\n\n"
     "Tool-use rules (follow strictly):\n"
+    "0. IMAGE-FIRST: if the user attaches an image AND says 'what is this', 'look at this', "
+    "'see this unit', 'identify this', 'pull the service notes', or similar, FIRST read any "
+    "visible brand/model label in the image, THEN CALL query_kb with that equipment_model and "
+    "any symptom mentioned. Do NOT ask the user what they want you to do. Do NOT describe the "
+    "image back to them. Just read the label and call query_kb.\n"
     "1. The MOMENT a tech describes ANY symptom with a brand/model, CALL query_kb FIRST. "
     "Do NOT ask clarifying questions first. Do NOT guess. Call query_kb, then summarize the top match.\n"
     "2. If the tech mentions gas smell, sulfur, rotten-egg smell, arcing, electrical burning, smoke, or CO symptoms "
@@ -302,11 +307,15 @@ class EngineHandle:
         system prompt so the next turn starts fresh."""
         if self._handle is None:
             return
+        # Guard against Cactus segfault-on-reset when called mid-stream: we've
+        # seen the C-side cleanup crash if cactus_stop was triggered from
+        # another thread. Swallow BaseException (includes SystemExit) so a
+        # crashing reset doesn't take the uvicorn process with it.
         try:
             cactus_reset(self._handle)
             logger.info("KV cache reset after error")
-        except Exception as e:
-            logger.warning(f"cactus_reset failed: {e}")
+        except BaseException as e:  # noqa: BLE001 — deliberate, Cactus can SIGSEGV here
+            logger.warning(f"cactus_reset failed (swallowed): {e!r}")
         try:
             self.prefill_system()
         except Exception as e:
@@ -516,8 +525,14 @@ class Session:
         we no longer thread raw PCM through the pcm_data parameter."""
         loop = asyncio.get_running_loop()
         token_queue: asyncio.Queue[str] = asyncio.Queue()
+        # Buffer every streamed token so that when Cactus returns bad JSON we
+        # can still run the fallback regex parser against the actual text the
+        # model emitted. Otherwise a single malformed completion drops the
+        # whole tool call on the floor.
+        token_buffer: list[str] = []
 
         def on_token(tok: str, _id: int) -> None:
+            token_buffer.append(tok)
             loop.call_soon_threadsafe(token_queue.put_nowait, tok)
 
         last_msg = self.messages[-1] if self.messages else {}
@@ -560,8 +575,16 @@ class Session:
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
-            log_event("complete_end", sid=self.sid, pass_idx=pass_idx, wall_ms=round(wall_ms, 1), error="bad_json")
-            return {"response": "", "function_calls": []}
+            # Recover: use the streamed token buffer as the response text so
+            # the fallback regex parser can still extract any tool call the
+            # model emitted in <|tool_call>call:name{args} or name(args) form.
+            recovered = "".join(token_buffer)
+            log_event(
+                "complete_end", sid=self.sid, pass_idx=pass_idx,
+                wall_ms=round(wall_ms, 1), error="bad_json",
+                recovered_len=len(recovered),
+            )
+            return {"response": recovered, "function_calls": []}
 
         log_event(
             "complete_end",

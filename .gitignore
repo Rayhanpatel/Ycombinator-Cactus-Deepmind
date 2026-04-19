@@ -26,6 +26,22 @@ models/
 *.gguf
 *.bin
 *.safetensors
+*.mlpackage
+*.mlmodelc
+gemma-4-E4B-it/
+ios/HVACCopilot/HVACCopilot/Resources/models/
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+ios/HVACCopilot_Xcode/
+
+# Inspection data (regenerated per run)
+inspection_data.db
 
 # IDE
 .vscode/

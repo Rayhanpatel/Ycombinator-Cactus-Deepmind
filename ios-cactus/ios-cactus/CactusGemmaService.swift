@@ -66,6 +66,11 @@ struct LLMResponse: Sendable {
 final class CactusGemmaService: @unchecked Sendable {
     private let queue = DispatchQueue(label: "ios-cactus.cactus-gemma-service")
     private var model: CactusModelT?
+    private let messageEncoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        return encoder
+    }()
 
     func loadModel(at modelURL: URL) async throws {
         try await withCheckedThrowingContinuation { continuation in
@@ -103,7 +108,7 @@ final class CactusGemmaService: @unchecked Sendable {
 
                     cactusReset(model)
 
-                    let messagesData = try JSONEncoder().encode(messages)
+                    let messagesData = try self.messageEncoder.encode(messages)
                     guard let messagesJSON = String(data: messagesData, encoding: .utf8) else {
                         throw NSError(
                             domain: "CactusGemmaService",

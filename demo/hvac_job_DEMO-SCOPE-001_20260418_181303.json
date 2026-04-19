@@ -1,0 +1,167 @@
+{
+  "job_id": "DEMO-SCOPE-001",
+  "closed_at": "2026-04-18T18:13:03.020494",
+  "summary": "Replaced failed 24V contactor (CTR02266) and weak run capacitor on Trane XR14 4TTR4. Scope expanded from contactor-only to include preventive cap replacement. Unit tested — three clean cooling cycles, compressor amp draw nominal.",
+  "parts_used": [
+    "CTR02266 (2-pole 30A 24V contactor)",
+    "P291-4554RS (45/5 µF 440V dual-run capacitor)"
+  ],
+  "follow_up_required": false,
+  "follow_up_notes": null,
+  "findings": [
+    {
+      "id": 3,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:46.120295",
+      "location": "outdoor condenser unit — control compartment",
+      "issue": "Failed 24V contactor — pitted contacts, open coil",
+      "severity": "major",
+      "part_number": "CTR02266",
+      "notes": null
+    },
+    {
+      "id": 4,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:46.120844",
+      "location": "outdoor condenser unit — capacitor",
+      "issue": "Weak run capacitor — 40µF vs 45µF spec, replaced preventively",
+      "severity": "minor",
+      "part_number": "P291-4554RS",
+      "notes": "Cap still within functional range but degrading. Replaced while contactor was being swapped."
+    },
+    {
+      "id": 7,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:50.415291",
+      "location": "outdoor condenser unit — control compartment",
+      "issue": "Failed 24V contactor — pitted contacts, open coil",
+      "severity": "major",
+      "part_number": "CTR02266",
+      "notes": null
+    },
+    {
+      "id": 8,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:50.415953",
+      "location": "outdoor condenser unit — capacitor",
+      "issue": "Weak run capacitor — 40µF vs 45µF spec, replaced preventively",
+      "severity": "minor",
+      "part_number": "P291-4554RS",
+      "notes": "Cap still within functional range but degrading. Replaced while contactor was being swapped."
+    },
+    {
+      "id": 11,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:54.552727",
+      "location": "outdoor condenser unit — control compartment",
+      "issue": "Failed 24V contactor — pitted contacts, open coil",
+      "severity": "major",
+      "part_number": "CTR02266",
+      "notes": null
+    },
+    {
+      "id": 12,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:54.553379",
+      "location": "outdoor condenser unit — capacitor",
+      "issue": "Weak run capacitor — 40µF vs 45µF spec, replaced preventively",
+      "severity": "minor",
+      "part_number": "P291-4554RS",
+      "notes": "Cap still within functional range but degrading. Replaced while contactor was being swapped."
+    },
+    {
+      "id": 15,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:58.757829",
+      "location": "outdoor condenser unit — control compartment",
+      "issue": "Failed 24V contactor — pitted contacts, open coil",
+      "severity": "major",
+      "part_number": "CTR02266",
+      "notes": null
+    },
+    {
+      "id": 16,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:58.758796",
+      "location": "outdoor condenser unit — capacitor",
+      "issue": "Weak run capacitor — 40µF vs 45µF spec, replaced preventively",
+      "severity": "minor",
+      "part_number": "P291-4554RS",
+      "notes": "Cap still within functional range but degrading. Replaced while contactor was being swapped."
+    },
+    {
+      "id": 19,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:13:03.019242",
+      "location": "outdoor condenser unit — control compartment",
+      "issue": "Failed 24V contactor — pitted contacts, open coil",
+      "severity": "major",
+      "part_number": "CTR02266",
+      "notes": null
+    },
+    {
+      "id": 20,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:13:03.019995",
+      "location": "outdoor condenser unit — capacitor",
+      "issue": "Weak run capacitor — 40µF vs 45µF spec, replaced preventively",
+      "severity": "minor",
+      "part_number": "P291-4554RS",
+      "notes": "Cap still within functional range but degrading. Replaced while contactor was being swapped."
+    }
+  ],
+  "safety_flags": [],
+  "scope_changes": [
+    {
+      "id": 1,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:46.120654",
+      "original_scope": "Contactor replacement on Trane XR14",
+      "new_scope": "Contactor replacement + preventive run capacitor replacement",
+      "reason": "Run capacitor reads 40µF vs 45µF spec — 11% degraded, likely to fail within one cooling season",
+      "estimated_extra_time_minutes": 15
+    },
+    {
+      "id": 2,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:50.415758",
+      "original_scope": "Contactor replacement on Trane XR14",
+      "new_scope": "Contactor replacement + preventive run capacitor replacement",
+      "reason": "Run capacitor reads 40µF vs 45µF spec — 11% degraded, likely to fail within one cooling season",
+      "estimated_extra_time_minutes": 15
+    },
+    {
+      "id": 3,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:54.553206",
+      "original_scope": "Contactor replacement on Trane XR14",
+      "new_scope": "Contactor replacement + preventive run capacitor replacement",
+      "reason": "Run capacitor reads 40µF vs 45µF spec — 11% degraded, likely to fail within one cooling season",
+      "estimated_extra_time_minutes": 15
+    },
+    {
+      "id": 4,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:12:58.758529",
+      "original_scope": "Contactor replacement on Trane XR14",
+      "new_scope": "Contactor replacement + preventive run capacitor replacement",
+      "reason": "Run capacitor reads 40µF vs 45µF spec — 11% degraded, likely to fail within one cooling season",
+      "estimated_extra_time_minutes": 15
+    },
+    {
+      "id": 5,
+      "job_id": "DEMO-SCOPE-001",
+      "timestamp": "2026-04-18T18:13:03.019778",
+      "original_scope": "Contactor replacement on Trane XR14",
+      "new_scope": "Contactor replacement + preventive run capacitor replacement",
+      "reason": "Run capacitor reads 40µF vs 45µF spec — 11% degraded, likely to fail within one cooling season",
+      "estimated_extra_time_minutes": 15
+    }
+  ],
+  "stats": {
+    "total_findings": 10,
+    "critical_findings": 0,
+    "safety_stops": 0,
+    "scope_changes_count": 5
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "id": "demo_movincool_x14_server_room",
+  "scenario_number": 4,
+  "title": "MovinCool X14 — Server Room Emergency Cooling Failure",
+  "tagline": "Data center spot-cooler down, servers thermal-throttling in 15 minutes",
+  "pitch_angle": "High-stakes commercial HVAC. Portable unit, not residential. Shows TechPilot handling industrial spot-cooling — a huge underserved field-service niche where downtime costs thousands per hour.",
+  "setup": {
+    "customer": "Meridian Data Systems — Colo Facility B",
+    "address": "2400 Innovation Dr, Columbia MD",
+    "dispatched_as": "Emergency — rack 14B supplemental cooling offline",
+    "unit": "MovinCool Climate Pro X14 (s/n range 0919–0422)",
+    "customer_brief_audio_transcript": "Hi this is Jen from Meridian. Our portable unit on rack 14B just threw an error code and shut down about ten minutes ago. We're seeing inlet temps climb. I need someone on-site now, the SLA clock is running."
+  },
+  "expected_kb_match": "movincool_climate_pro_x14",
+  "demo_beats": [
+    {
+      "step": 1,
+      "trigger": "Tech walks up to unit wearing glasses (or MacBook webcam pointed at mock unit)",
+      "tech_says": "What am I looking at here — what's the error code showing?",
+      "agent_behavior": {
+        "vision": "Identify MovinCool X14 by form factor + nameplate if visible",
+        "spoken_response": "That's a MovinCool Climate Pro X14. I can see the display — can you read me the code?",
+        "hud_overlay": [
+          {
+            "kind": "label",
+            "text": "MovinCool X14",
+            "anchor": "nameplate"
+          },
+          {
+            "kind": "banner",
+            "text": "Checking service manual…",
+            "position": "top"
+          }
+        ]
+      }
+    },
+    {
+      "step": 2,
+      "trigger": "Tech reads error code aloud",
+      "tech_says": "It's showing E04",
+      "agent_behavior": {
+        "tool_calls": [
+          {"name": "query_kb", "args": {"query": "MovinCool X14 E04 error code"}}
+        ],
+        "spoken_response": "E04 on the X14 typically points to condensate overflow. The pump has likely failed or the drain line is clogged. Water sitting in the pan triggers the float switch and shuts the compressor down.",
+        "hud_overlay": [
+          {
+            "kind": "label",
+            "text": "E04 → condensate overflow",
+            "anchor": "display",
+            "color": "warn"
+          },
+          {
+            "kind": "banner",
+            "text": "Step 1 of 3: Pull the service panel, check condensate pan",
+            "position": "bottom"
+          }
+        ]
+      }
+    },
+    {
+      "step": 3,
+      "trigger": "Tech opens service panel, camera sees pan with water + pump",
+      "tech_says": "Yeah, pan's full, pump isn't running",
+      "agent_behavior": {
+        "vision": "Confirm standing water in pan, identify pump location",
+        "spoken_response": "Confirmed. Kill power at the disconnect, pull the pump, check the float switch and the motor winding. If the motor's dead, it's a condensate pump assembly swap — I can pull the part number.",
+        "hud_overlay": [
+          {
+            "kind": "label",
+            "text": "Condensate pump",
+            "anchor": "pump",
+            "color": "info"
+          },
+          {
+            "kind": "label",
+            "text": "Float switch — test continuity",
+            "anchor": "float_switch"
+          },
+          {
+            "kind": "checklist",
+            "items": [
+              "Power off at disconnect",
+              "Remove pump assembly",
+              "Test float switch continuity",
+              "Measure pump motor winding"
+            ],
+            "position": "right"
+          }
+        ]
+      }
+    },
+    {
+      "step": 4,
+      "trigger": "Tech confirms pump is dead",
+      "tech_says": "Motor's open. Log this as the fault and pull the part.",
+      "agent_behavior": {
+        "tool_calls": [
+          {
+            "name": "log_finding",
+            "args": {
+              "summary": "MovinCool X14 condensate pump motor failure (open winding), E04 overflow. Pump assembly replacement required.",
+              "part_id": "movincool_x14_condensate_pump"
+            }
+          }
+        ],
+        "spoken_response": "Logged. Condensate pump assembly is in the truck inventory — swap it, clear the drain line, verify the float switch moves freely, then power up and watch for E04 to clear.",
+        "hud_overlay": [
+          {
+            "kind": "banner",
+            "text": "✓ Finding logged",
+            "position": "top",
+            "ttl_ms": 2500
+          }
+        ]
+      }
+    },
+    {
+      "step": 5,
+      "trigger": "Tech completes replacement, unit restarts clean",
+      "tech_says": "Unit's running, no codes. Close it out.",
+      "agent_behavior": {
+        "tool_calls": [
+          {
+            "name": "close_job",
+            "args": {
+              "resolution": "Condensate pump assembly replaced. E04 cleared. Unit returned to service. Recommended customer schedule quarterly drain line flush to prevent recurrence."
+            }
+          }
+        ],
+        "spoken_response": "Job closed. Export is on the Mac. I left a note to recommend quarterly drain line maintenance — that'll keep E04 from coming back.",
+        "hud_overlay": [
+          {
+            "kind": "banner",
+            "text": "✓ Job closed — export written",
+            "position": "center",
+            "ttl_ms": 3000
+          }
+        ]
+      }
+    }
+  ],
+  "why_this_scenario_for_demo": [
+    "Commercial/industrial angle — not just residential AC, shows TechPilot handles the higher-stakes segment",
+    "Error-code-driven diagnosis — demonstrates tight KB integration and specific model knowledge",
+    "Full tool-call sweep in one scenario: query_kb → log_finding → close_job",
+    "Time-pressure framing (SLA clock) makes the hands-free voice/vision value obvious",
+    "Portable spot coolers are a real underserved niche — MovinCool, Denso, Spot Coolers Inc. — very few training programs, perfect fit for AI guidance"
+  ],
+  "fallback_script_if_vision_fails": "If Gemma can't identify the unit from the camera frame, tech can just say 'I'm working on a MovinCool X14' and the flow continues identically from step 2. Build this fallback into the system prompt: agent should accept verbal model ID as authoritative."
+}

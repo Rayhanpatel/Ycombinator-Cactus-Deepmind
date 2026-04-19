@@ -277,6 +277,19 @@ button.secondary {
 .tool-entry.finding { border-left: 3px solid var(--accent); }
 .tool-entry.scope  { border-left: 3px solid var(--warn); }
 .tool-entry.close  { border-left: 3px solid #c471ff; }
+.tool-entry.online {
+  border-left: 3px solid var(--warn);
+  background: rgba(255, 176, 32, 0.08);
+}
+
+.online-banner {
+  background: linear-gradient(90deg, rgba(255,176,32,0.25), rgba(255,176,32,0.08));
+  border-bottom: 1px solid rgba(255,176,32,0.5);
+  color: var(--warn);
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
 
 .tool-name {
   font-weight: 600;

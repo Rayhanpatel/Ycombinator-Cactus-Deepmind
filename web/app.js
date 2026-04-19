@@ -306,6 +306,8 @@ function finishAssistant(finalText, stats) {
 }
 
 // ── Tool activity log ───────────────────────────────────────
+let _onlineBannerShown = false;
+
 function toolEntry(payload) {
   const { name, arguments: args, result } = payload;
   const div = document.createElement("div");
@@ -315,12 +317,24 @@ function toolEntry(payload) {
     flag_safety: "safety",
     flag_scope_change: "scope",
     close_job: "close",
+    search_online_hvac: "online",
   }[name] || "");
 
   const head = document.createElement("div");
   head.className = "tool-name";
-  head.textContent = name;
+  head.textContent = (name === "search_online_hvac" ? "🌐 " : "") + name;
   div.appendChild(head);
+
+  // First time online search fires per session, show the banner so the user
+  // sees exactly when data left the device.
+  if (name === "search_online_hvac" && !_onlineBannerShown) {
+    _onlineBannerShown = true;
+    const banner = document.getElementById("online-banner");
+    if (banner) {
+      banner.classList.remove("hidden");
+      setTimeout(() => banner.classList.add("hidden"), 8000);
+    }
+  }
 
   if (name === "query_kb" && result && result.results) {
     result.results.forEach((hit) => {
@@ -353,6 +367,23 @@ function toolEntry(payload) {
     row.className = "tool-kb-hit";
     row.innerHTML = `<span class="id">JOB CLOSED</span><br><span class="dx">${c.summary}<br>Parts: ${c.parts_used.join(", ") || "(none)"}${c.follow_up_required ? " · follow-up required" : ""}</span>`;
     div.appendChild(row);
+  } else if (name === "search_online_hvac") {
+    if (result && result.ok && Array.isArray(result.results) && result.results.length) {
+      result.results.slice(0, 4).forEach((hit) => {
+        const row = document.createElement("div");
+        row.className = "tool-kb-hit";
+        const title = (hit.title || "(untitled)").replace(/</g, "&lt;");
+        const url = hit.url || "#";
+        row.innerHTML = `<span class="id">r · ${hit.score ?? 0}</span> · <a href="${url}" target="_blank" rel="noopener">${title}</a>`;
+        div.appendChild(row);
+      });
+    } else {
+      const row = document.createElement("div");
+      row.className = "tool-kb-hit";
+      const reason = (result && result.reason) || "no results";
+      row.innerHTML = `<span class="dx">online search: ${reason}</span>`;
+      div.appendChild(row);
+    }
   } else {
     const row = document.createElement("div");
     row.className = "tool-kb-hit";
@@ -637,6 +668,9 @@ resetBtn.addEventListener("click", () => {
   transcriptEl.innerHTML = "";
   toolLog.innerHTML = "";
   safetyBanner.classList.add("hidden");
+  const onlineBanner = document.getElementById("online-banner");
+  if (onlineBanner) onlineBanner.classList.add("hidden");
+  _onlineBannerShown = false;
   addMessage("system-note", "Session reset.");
 });
 

@@ -10,8 +10,8 @@
 <header>
   <h1>🌵 HVAC Copilot</h1>
   <div id="status" class="status">connecting…</div>
-  <div class="on-device-badge" title="The model, KB, audio, and images never leave this Mac.">
-    🔒 Zero cloud · zero bytes leave this Mac
+  <div class="on-device-badge" title="Model, KB, audio, and images run on-device. An explicit online-escalation tool is available for rare equipment — every use shows a 🌐 banner.">
+    🔒 On-device first · 🌐 explicit online escalation
   </div>
   <div class="subtitle">
     <span id="model-badge">Gemma 4 E4B · Cactus · on-device</span>
@@ -27,6 +27,10 @@
 <div id="safety-banner" class="safety-banner hidden">
   <div class="safety-title">⚠️ STOP WORK — SAFETY ALERT</div>
   <div id="safety-detail"></div>
+</div>
+
+<div id="online-banner" class="online-banner hidden">
+  🌐 Online search used — query sent to reddit.com. Everything else in this session is on-device.
 </div>
 
 <main>

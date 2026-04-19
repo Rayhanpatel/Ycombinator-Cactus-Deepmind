@@ -164,6 +164,12 @@ class HVACToolDispatcher:
         )
         return {"closed": True, "closure": closure.to_dict(), "session": self.findings.snapshot()}
 
+    def _tool_search_online_hvac(self, query: str, **_: Any) -> dict[str, Any]:
+        """Online escalation — the one tool that leaves this Mac. Imported
+        lazily so the requests/praw import cost isn't paid at app load."""
+        from src.online_search import search as _online_search
+        return _online_search(query)
+
 
 # ── Backward-compat shims for src/agent.py (legacy single-dispatcher path) ──
 

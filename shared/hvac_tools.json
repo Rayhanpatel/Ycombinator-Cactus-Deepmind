@@ -144,6 +144,23 @@
           "required": ["summary", "parts_used", "follow_up_required"]
         }
       }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "search_online_hvac",
+        "description": "ESCALATION ONLY: search online HVAC technician forums (Reddit) for rare equipment or unusual failure modes. Use ONLY when query_kb returns no matches, OR when the technician explicitly says 'look it up online'. This tool sends the query over the internet — it is the only part of the app that leaves this Mac. Never chain automatically after query_kb.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Equipment model + symptom. Do NOT include customer names, addresses, or phone numbers."
+            }
+          },
+          "required": ["query"]
+        }
+      }
     }
   ]
 }

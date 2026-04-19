@@ -61,13 +61,18 @@ SYSTEM_PROMPT = (
     "CALL log_finding to record it.\n"
     "4. When the tech spots additional work beyond the ticket (e.g. 'contactor also needs replacing'), "
     "CALL flag_scope_change.\n"
-    "5. When the tech says they're done ('job's finished', 'cooling is normal', 'unit's running'), CALL close_job.\n\n"
+    "5. When the tech says they're done ('job's finished', 'cooling is normal', 'unit's running'), CALL close_job.\n"
+    "6. ESCALATION: only call search_online_hvac when query_kb returned zero or irrelevant results "
+    "for a RARE / uncommon unit, OR when the tech explicitly says 'look online', 'check Reddit', "
+    "'any field reports'. NEVER chain search_online_hvac after a successful query_kb. "
+    "This tool is the only part of the app that makes a network call — use it sparingly.\n\n"
     "Tools available:\n"
     "  • query_kb(query, equipment_model?) — search the curated HVAC KB for the top match.\n"
     "  • log_finding(location, issue, severity, part_number?, notes?)\n"
     "  • flag_safety(hazard, immediate_action, level)\n"
     "  • flag_scope_change(original_scope, new_scope, reason, estimated_extra_time_minutes?)\n"
-    "  • close_job(summary, parts_used, follow_up_required, follow_up_notes?)\n\n"
+    "  • close_job(summary, parts_used, follow_up_required, follow_up_notes?)\n"
+    "  • search_online_hvac(query) — ESCALATION ONLY. Online technician forums.\n\n"
     "After any tool call returns, summarize the result for the tech in 1-2 sentences. "
     "Name the part, the confirming test, and the first safety step. Do not dump the raw JSON."
 )
@@ -80,7 +85,7 @@ GEN_OPTIONS = {
     "temperature": cfg.TEMPERATURE,
 }
 
-TOOL_NAMES = {"query_kb", "log_finding", "flag_safety", "flag_scope_change", "close_job"}
+TOOL_NAMES = {"query_kb", "log_finding", "flag_safety", "flag_scope_change", "close_job", "search_online_hvac"}
 
 # Form A: `name(arg=value, ...)`, optionally wrapped in <|tool_call_start|>...<|tool_call_end|>.
 _TOOL_CALL_PAREN = re.compile(

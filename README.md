@@ -48,15 +48,16 @@ HANDOFF_IOS_LEGACY.md    # iOS handoff, kept for reference
 Internal_docs/           # idea.md (vision), build_plan.md, conversation history
 ```
 
-## The 5 HVAC tools
+## The 6 HVAC tools
 
-Each tool's schema lives in [shared/hvac_tools.json](shared/hvac_tools.json) and is dispatched by [src/tools.py](src/tools.py):
+Each tool's schema lives in [shared/hvac_tools.json](shared/hvac_tools.json) and is dispatched by [src/tools.py](src/tools.py). Five run 100% on-device; one is an explicit, UI-visible online escalation:
 
-- **`query_kb(query, equipment_model?)`** — keyword-scored search over the 18 KB entries (dual-schema tolerant)
-- **`log_finding(location, issue, severity, part_number?, notes?)`** — records a diagnosed problem
-- **`flag_safety(hazard, immediate_action, level)`** — level=`stop` halts the session, fires the red banner in the UI
-- **`flag_scope_change(original_scope, new_scope, reason, estimated_extra_time_minutes?)`**
-- **`close_job(summary, parts_used, follow_up_required, follow_up_notes?)`** — emits the structured resolution record
+- **`query_kb(query, equipment_model?)`** — keyword-scored search over the 18 KB entries (dual-schema tolerant). On-device.
+- **`log_finding(location, issue, severity, part_number?, notes?)`** — records a diagnosed problem. On-device.
+- **`flag_safety(hazard, immediate_action, level)`** — level=`stop` halts the session, fires the red banner in the UI. On-device.
+- **`flag_scope_change(original_scope, new_scope, reason, estimated_extra_time_minutes?)`**. On-device.
+- **`close_job(summary, parts_used, follow_up_required, follow_up_notes?)`** — emits the structured resolution record. On-device.
+- **`search_online_hvac(query)` 🌐** — escalation ONLY. Queries r/HVAC + r/hvacadvice + r/Refrigeration via `src/online_search.py` (PRAW if credentials present, anonymous JSON fallback otherwise). Every call shows an amber 🌐 card in the tool-activity panel and a banner explaining that the query went to reddit.com. The system prompt forbids auto-chaining from `query_kb` — this fires only on rare units or explicit tech ask. Online path adapted from teammate Amogh's Reddit fetcher + web-ranker + progressive-search work on [src/reddit_fetcher.py](src/reddit_fetcher.py), [src/web_ranker.py](src/web_ranker.py), [src/progressive_search.py](src/progressive_search.py).
 
 ## Quickstart
 

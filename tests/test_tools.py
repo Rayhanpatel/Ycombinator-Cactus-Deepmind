@@ -24,7 +24,7 @@ def _fresh_dispatcher() -> HVACToolDispatcher:
 
 
 def test_schemas_loaded_from_shared():
-    """All 5 HVAC tool schemas should be present."""
+    """All 6 HVAC tool schemas should be present (5 on-device + 1 online escalation)."""
     names = {s["function"]["name"] for s in TOOL_SCHEMAS}
     assert names == {
         "query_kb",
@@ -32,12 +32,13 @@ def test_schemas_loaded_from_shared():
         "flag_safety",
         "flag_scope_change",
         "close_job",
+        "search_online_hvac",
     }
 
 
 def test_get_tools_json():
     tools = json.loads(get_tools_json())
-    assert len(tools) == 5
+    assert len(tools) == 6
 
 
 def test_query_kb_returns_carrier():

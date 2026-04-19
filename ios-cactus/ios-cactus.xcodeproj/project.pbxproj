@@ -6,13 +6,42 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXCopyFilesBuildPhase section */
+		1390EE6E2F9483340075DEBB /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		1390EE562F9480540075DEBB /* ios-cactus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ios-cactus.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		1390EE6F2F9483350075DEBB /* Exceptions for "ios-cactus" folder in "Embed Frameworks" phase from "ios-cactus" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			attributesByRelativePath = {
+				"cactus-ios.xcframework" = (CodeSignOnCopy, RemoveHeadersOnCopy, );
+			};
+			buildPhase = 1390EE6E2F9483340075DEBB /* Embed Frameworks */;
+			membershipExceptions = (
+				"cactus-ios.xcframework",
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1390EE582F9480540075DEBB /* ios-cactus */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1390EE6F2F9483350075DEBB /* Exceptions for "ios-cactus" folder in "Embed Frameworks" phase from "ios-cactus" target */,
+			);
 			path = "ios-cactus";
 			sourceTree = "<group>";
 		};
@@ -55,6 +84,7 @@
 				1390EE522F9480540075DEBB /* Sources */,
 				1390EE532F9480540075DEBB /* Frameworks */,
 				1390EE542F9480540075DEBB /* Resources */,
+				1390EE6E2F9483340075DEBB /* Embed Frameworks */,
 			);
 			buildRules = (
 			);

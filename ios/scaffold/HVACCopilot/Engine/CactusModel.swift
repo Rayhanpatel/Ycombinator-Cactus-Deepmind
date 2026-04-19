@@ -5,7 +5,7 @@
 //   cactusComplete(model, messagesJSON, optionsJSON, toolsJSON, callback) -> resultJSON
 
 import Foundation
-import Cactus
+import cactus
 
 actor CactusModel {
     static let shared = CactusModel()

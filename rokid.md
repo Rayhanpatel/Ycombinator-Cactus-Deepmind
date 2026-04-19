@@ -185,6 +185,7 @@ The UI now has a dedicated Rokid panel that shows:
 - Keep it in the foreground.
 - The app automatically tries to connect to the configured Mac bridge URL.
 - Press `Enter` or the center touchpad button to force a reconnect if needed.
+- When the app leaves the foreground or is closed, it intentionally stops the WebRTC session. Opening the app again starts a fresh connection from the beginning.
 
 The HUD shows:
 
@@ -226,6 +227,7 @@ The HUD shows:
 
 ## Troubleshooting
 
+- If you close or background the Rokid app and expect it to stay connected, that is not the current behavior. The app now disconnects on background so the next launch renegotiates a clean session.
 - If `POST /session` returns `503 Service Unavailable`, the usual cause is that the Python env running the server is missing Rokid dependencies such as `aiortc` or `silero-vad`. Re-run `cactus/venv/bin/pip install -r requirements.txt`, then restart the server from `cactus/venv/bin/python`.
 - If the glasses connect but there is no assistant speech, verify `brew install espeak-ng` was run and check `/healthz` or the browser Rokid panel for `speech_backend_error`.
 - If background noise triggers too easily, the current defaults are already stricter than the original setup. To make them stricter still, raise `ROKID_VAD_START_THRESHOLD`, `ROKID_VAD_END_THRESHOLD`, `ROKID_VAD_MIN_SPEECH_MS`, `ROKID_AUDIO_GATE_DB_OFFSET`, or `ROKID_AUDIO_GATE_MIN_DBFS`, then restart the server.

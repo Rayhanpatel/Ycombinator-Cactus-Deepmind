@@ -35,6 +35,8 @@ class MainActivity : AppCompatActivity(), RokidBridgePeer.Listener {
     private val logLines = ArrayDeque<String>()
     private var currentConnectionState = "Idle"
     private var currentStatus = ""
+    private var permissionsGranted = false
+    private var maintainBridgeSession = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,7 +52,24 @@ class MainActivity : AppCompatActivity(), RokidBridgePeer.Listener {
         ensurePermissions()
     }
 
+    override fun onStart() {
+        super.onStart()
+        maintainBridgeSession = true
+        startBridgeIfPossible()
+    }
+
+    override fun onStop() {
+        maintainBridgeSession = false
+        reconnectHandler.removeCallbacksAndMessages(null)
+        bridgePeer?.stop()
+        updateConnection("Idle")
+        currentStatus = getString(R.string.status_background)
+        renderStatus()
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        maintainBridgeSession = false
         reconnectHandler.removeCallbacksAndMessages(null)
         stopBridge()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -79,8 +98,10 @@ class MainActivity : AppCompatActivity(), RokidBridgePeer.Listener {
         if (requestCode != REQUEST_PERMISSIONS) return
 
         if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+            permissionsGranted = true
             startBridgeIfPossible()
         } else {
+            permissionsGranted = false
             currentStatus = getString(R.string.status_permissions_denied)
             renderStatus()
             appendLog("Permissions denied")
@@ -107,9 +128,15 @@ class MainActivity : AppCompatActivity(), RokidBridgePeer.Listener {
                 PeerConnection.IceConnectionState.DISCONNECTED,
                 PeerConnection.IceConnectionState.CLOSED,
                 PeerConnection.IceConnectionState.FAILED -> {
-                    currentStatus = "Link lost. Reconnecting…"
+                    currentStatus = if (maintainBridgeSession) {
+                        "Link lost. Reconnecting…"
+                    } else {
+                        getString(R.string.status_background)
+                    }
                     renderStatus()
-                    scheduleReconnect()
+                    if (maintainBridgeSession) {
+                        scheduleReconnect()
+                    }
                 }
 
                 else -> Unit
@@ -135,7 +162,9 @@ class MainActivity : AppCompatActivity(), RokidBridgePeer.Listener {
             appendLog("Error: $message")
             currentStatus = message
             renderStatus()
-            scheduleReconnect()
+            if (maintainBridgeSession) {
+                scheduleReconnect()
+            }
         }
         Log.e(TAG, message, throwable)
     }
@@ -147,6 +176,7 @@ class MainActivity : AppCompatActivity(), RokidBridgePeer.Listener {
         }
 
         if (missing.isEmpty()) {
+            permissionsGranted = true
             startBridgeIfPossible()
         } else {
             ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_PERMISSIONS)
@@ -154,6 +184,8 @@ class MainActivity : AppCompatActivity(), RokidBridgePeer.Listener {
     }
 
     private fun startBridgeIfPossible() {
+        if (!maintainBridgeSession) return
+        if (!permissionsGranted) return
         if (sessionUrl.isBlank()) {
             updateConnection("Config")
             currentStatus = "Set BRIDGE_SESSION_URL in rokid/local.properties."

@@ -30,7 +30,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.cactus import cactus_init, cactus_complete, cactus_destroy, cactus_prefill, cactus_reset
+from src.cactus import cactus_init, cactus_complete, cactus_destroy, cactus_prefill, cactus_reset, cactus_stop
 from src.config import cfg
 from src.findings_store import FindingsStore
 from src.kb_store import get_kb_store
@@ -72,8 +72,11 @@ SYSTEM_PROMPT = (
     "Name the part, the confirming test, and the first safety step. Do not dump the raw JSON."
 )
 
+# max_tokens is capped at 220 regardless of cfg.MAX_TOKENS — replies longer
+# than ~4 sentences drag the turn past the user's attention budget and
+# invite the user to start talking over the model.
 GEN_OPTIONS = {
-    "max_tokens": cfg.MAX_TOKENS,
+    "max_tokens": min(cfg.MAX_TOKENS, 220),
     "temperature": cfg.TEMPERATURE,
 }
 
@@ -384,6 +387,7 @@ class Session:
         self._temp_files: list[str] = []
         self.turn_count = 0
         self.connected_at = time.time()
+        self.cancel_requested = False  # flipped by a `cancel` WS message
 
     async def send(self, payload: dict[str, Any]) -> None:
         await self.ws.send_text(json.dumps(payload))
@@ -603,10 +607,17 @@ class Session:
         ttft: float | None = None
         decode_tps: float | None = None
         passes_done = 0
+        self.cancel_requested = False  # fresh flag per turn
 
         for pass_idx in range(max_passes):
+            if self.cancel_requested:
+                logger.info(f"turn {self.turn_count} cancelled before pass {pass_idx}")
+                break
             passes_done = pass_idx + 1
             result = await self._complete_once(pass_idx=pass_idx)
+            if self.cancel_requested:
+                logger.info(f"turn {self.turn_count} cancelled mid-turn after pass {pass_idx}")
+                break
 
             assistant_text = result.get("response", "") or ""
             function_calls = result.get("function_calls") or []
@@ -722,6 +733,19 @@ async def ws_session(ws: WebSocket) -> None:
                     engine.reset_and_rewarm()
                     await session.send_session_state()
                     await session.send({"type": "ready"})
+
+                elif kind == "cancel":
+                    # User hit Stop (or toggled hands-free off) while the model
+                    # was still generating. Signal Cactus to abort the current
+                    # completion AND set the flag so run_turn's multi-pass
+                    # loop doesn't kick off another completion after this one.
+                    session.cancel_requested = True
+                    try:
+                        cactus_stop(engine.handle)
+                        logger.info(f"sid={session.sid} cactus_stop signalled")
+                        log_event("cancel", sid=session.sid)
+                    except Exception as e:
+                        logger.warning(f"cactus_stop failed: {e}")
 
                 elif kind == "ping":
                     await session.send({"type": "pong"})

@@ -181,6 +181,13 @@ button.secondary {
   font-weight: 600;
 }
 
+.stop-btn {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+  font-weight: 600;
+}
+
 .mic-btn {
   width: 44px;
   font-size: 18px;

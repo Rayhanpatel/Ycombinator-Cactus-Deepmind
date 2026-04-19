@@ -30,12 +30,14 @@ const safetyDetail = $("safety-detail");
 const camEl = $("cam");
 const camBtn = $("cam-btn");
 const camCanvas = $("cam-canvas");
+const stopBtn = $("stop-btn");
 
 let ws;
 let currentAssistantMsg = null;
 let videoStream = null;
 let pendingFrameB64 = null;
 let frameInterval = null;
+let isGenerating = false;   // true from send → assistant_end
 
 // ── Web Speech API (STT) ────────────────────────────────────
 // Wine_Voice_AI pattern: Chrome does transcription in-browser. No PCM goes
@@ -127,6 +129,25 @@ function flushSentenceBuffer(force = false) {
 function setStatus(text, cls = "") {
   statusEl.textContent = text;
   statusEl.className = "status " + cls;
+}
+
+function setGenerating(on) {
+  isGenerating = on;
+  if (stopBtn) stopBtn.classList.toggle("hidden", !on);
+}
+
+function sendCancel() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  // Cut TTS, clear any queued sentences, tell the server to cactus_stop.
+  window.speechSynthesis.cancel();
+  speechQueue.length = 0;
+  isSpeaking = false;
+  sentenceBuffer = "";
+  ws.send(JSON.stringify({ type: "cancel" }));
+  addMessage("system-note", "[stopped]");
+  setGenerating(false);
+  setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
+  currentAssistantMsg = null;
 }
 
 function addMessage(role, text = "") {
@@ -292,11 +313,13 @@ function connect() {
           console.groupEnd();
           turnT0 = 0;
         }
+        setGenerating(false);
         finishAssistant(evt.text, { ttft_ms: evt.ttft_ms, decode_tps: evt.decode_tps });
         break;
       case "error":
         addMessage("system-note", `[${evt.message}]`);
         setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
+        setGenerating(false);
         currentAssistantMsg = null;
         // If we were suppressed from TTS, resume listening.
         if (handsFree) {
@@ -335,6 +358,7 @@ function sendUtterance(text) {
   turnT0 = performance.now();
   turnFirstTokenT = 0;
   const hasImage = !!(videoStream && pendingFrameB64);
+  setGenerating(true);
   console.groupCollapsed(`🌵 turn ${turnNum} — ${hasImage ? "multimodal" : "text"} — "${clean.slice(0, 60)}"`);
   console.log("send @", new Date().toISOString(), "hasImage:", hasImage);
 
@@ -454,7 +478,13 @@ function toggleHandsFree() {
     window.speechSynthesis.cancel();
     speechQueue.length = 0;
     isSpeaking = false;
-    setStatus("ready", "connected");
+    // If the model was still generating when the user disabled hands-free,
+    // treat it as an intent to abort — send cancel so it stops mid-stream.
+    if (isGenerating) {
+      sendCancel();
+    } else {
+      setStatus("ready", "connected");
+    }
   }
 }
 
@@ -514,6 +544,9 @@ function captureKeyframe() {
 
 // ── Mic toggle: click to start/stop hands-free ─────────────
 micBtn.addEventListener("click", toggleHandsFree);
+
+// ── Stop button: cancels in-flight generation ───────────────
+if (stopBtn) stopBtn.addEventListener("click", sendCancel);
 
 // ── boot ────────────────────────────────────────────────────
 connect();

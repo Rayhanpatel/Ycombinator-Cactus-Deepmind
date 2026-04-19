@@ -31,16 +31,44 @@ class KBStore:
     def load(self) -> int:
         self._entries.clear()
         for path in sorted(self._kb_dir.glob("*.json")):
+            # The kb_index.json is a sidecar that the teammate's embeddings
+            # pipeline produces; it's not a real entry, skip it.
+            if path.name == "kb_index.json":
+                continue
             try:
                 with path.open() as f:
                     entry = json.load(f)
-                entry["_tokens"] = (
-                    _tokenize(" ".join(entry.get("tags", [])))
-                    | _tokenize(entry.get("brand", ""))
-                    | _tokenize(entry.get("model", ""))
-                    | _tokenize(entry.get("equipment_type", ""))
-                    | _tokenize(entry.get("symptom", ""))
-                )
+                # Token bag is the union of every searchable text field we
+                # know about across BOTH KB schemas:
+                # - "flat" schema (original): brand, model, equipment_type,
+                #   symptom (str), tags[]
+                # - "rich" schema (teammate's MovinCool): manufacturer,
+                #   category, symptoms[], common_faults[],
+                #   common_applications[], title
+                def _pull_list(key: str) -> str:
+                    v = entry.get(key)
+                    if isinstance(v, list):
+                        return " ".join(str(x) for x in v)
+                    return ""
+
+                tokens = set()
+                for s in (
+                    entry.get("brand"),
+                    entry.get("manufacturer"),
+                    entry.get("model"),
+                    entry.get("equipment_type"),
+                    entry.get("category"),
+                    entry.get("title"),
+                    entry.get("symptom"),
+                    entry.get("diagnosis"),
+                    _pull_list("tags"),
+                    _pull_list("symptoms"),
+                    _pull_list("common_faults"),
+                    _pull_list("common_applications"),
+                ):
+                    if s:
+                        tokens |= _tokenize(str(s))
+                entry["_tokens"] = tokens
                 self._entries.append(entry)
             except Exception as e:
                 logger.warning(f"Failed to load KB entry {path.name}: {e}")
@@ -60,13 +88,15 @@ class KBStore:
         for entry in self._entries:
             score = 0
             entry_tags = {t.lower() for t in entry.get("tags", [])}
+            # Handle both "brand" (flat schema) and "manufacturer" (rich schema).
+            brand_l = (entry.get("brand") or entry.get("manufacturer") or "").lower()
 
             for tok in query_tokens:
                 if tok in entry_tags:
                     score += 3
                 if tok in entry["_tokens"]:
                     score += 1
-                if tok in entry.get("brand", "").lower():
+                if tok in brand_l:
                     score += 2
                 if tok in entry.get("model", "").lower():
                     score += 2

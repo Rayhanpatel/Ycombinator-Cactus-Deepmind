@@ -1,0 +1,67 @@
+{
+  "id": "movincool_climate_pro_x14",
+  "title": "MovinCool Climate Pro X14 — Portable Spot Cooling Unit",
+  "manufacturer": "MovinCool",
+  "model": "Climate Pro X14",
+  "serial_range": "0919 (Sept 2019) – 0422 (Apr 2022)",
+  "category": "portable_spot_cooler",
+  "common_applications": [
+    "server room emergency cooling",
+    "event and tent cooling",
+    "warehouse spot cooling",
+    "temporary cooling during HVAC outage"
+  ],
+  "symptoms": [
+    "unit not cooling",
+    "compressor not starting",
+    "condensate overflow",
+    "error code on display",
+    "airflow reduced",
+    "unit short-cycling",
+    "water leaking from base",
+    "fan running but no cold air"
+  ],
+  "common_faults": [
+    "condensate pump failure or clogged drain line",
+    "dirty condenser coil restricting airflow",
+    "low refrigerant charge",
+    "thermistor / sensor failure triggering error code",
+    "control board fault",
+    "compressor capacitor failure"
+  ],
+  "diagnosis_steps": [
+    "Check display for error code — cross-reference service manual error table",
+    "Verify power supply matches nameplate (see MovinCool power requirements FAQ)",
+    "Inspect condensate pan and pump for blockage",
+    "Clean condenser coil and verify airflow clearances (front and sides)",
+    "Measure compressor run capacitor and contactor",
+    "Verify thermistor readings against spec"
+  ],
+  "parts": [
+    "MovinCool condensate pump assembly",
+    "Run capacitor (consult service manual for μF rating)",
+    "Thermistor kit",
+    "Control board"
+  ],
+  "references": [
+    {
+      "title": "Climate Pro X14 Service Manual",
+      "url": "https://support.movincool.com/support/solutions/articles/151000205148-climate-pro-x14-service-manual",
+      "notes": "Full service manual PDF — download link on page. Covers serial range 0919–0422."
+    },
+    {
+      "title": "Climate Pro X14 without Module Service Manual",
+      "url": "https://support.movincool.com/support/solutions/articles/151000205149-climate-pro-x14-without-module-service-manual"
+    },
+    {
+      "title": "MovinCool power requirements FAQ",
+      "url": "https://support.movincool.com/support/solutions/articles/151000204759-what-type-of-power-do-i-need-"
+    },
+    {
+      "title": "MovinCool clearance requirements",
+      "url": "https://support.movincool.com/support/solutions/articles/151000204751-how-much-side-and-front-clearance-is-needed-for-the-portable-units-to-operate-"
+    }
+  ],
+  "embedding": null,
+  "_todo": "Re-run scripts/build_kb_embeddings.py after adding, OR run scripts/ingest_pdf_manual.py --pdf data/manuals/movincool_x14.pdf --entry-id movincool_climate_pro_x14 to upgrade with real manual content + embedding."
+}

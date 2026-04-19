@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import PhotosUI
 import SwiftUI
 
 struct ChatBubble: Identifiable, Sendable {
@@ -29,11 +30,13 @@ struct ChatBubble: Identifiable, Sendable {
     let id: UUID
     let role: Role
     var text: String
+    let photoAttachment: PhotoAttachment?
 
-    init(id: UUID = UUID(), role: Role, text: String) {
+    init(id: UUID = UUID(), role: Role, text: String, photoAttachment: PhotoAttachment? = nil) {
         self.id = id
         self.role = role
         self.text = text
+        self.photoAttachment = photoAttachment
     }
 }
 
@@ -41,15 +44,18 @@ struct ChatBubble: Identifiable, Sendable {
 final class ChatViewModel: ObservableObject {
     @Published var input = ""
     @Published private(set) var bubbles: [ChatBubble] = []
+    @Published private(set) var draftPhotoAttachment: PhotoAttachment?
     @Published private(set) var status = "Looking for a local Gemma model…"
     @Published private(set) var modelDescription = "No model loaded yet."
     @Published private(set) var isGenerating = false
     @Published private(set) var isLoadingModel = false
 
     private let service = CactusGemmaService()
+    private let photoAttachmentStore = PhotoAttachmentStore()
     private var hasBooted = false
 
     private let systemPrompt = "You are a concise assistant running entirely on-device on an iPhone through Cactus. Answer in plain text."
+    private let defaultPhotoPrompt = "Describe this photo."
 
     var setupHint: String {
         AppModelLocation.setupHint
@@ -60,7 +66,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     var canSend: Bool {
-        !isBusy && !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && status.hasPrefix("Ready")
+        !isBusy && (!input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draftPhotoAttachment != nil) && status.hasPrefix("Ready")
     }
 
     var isBusy: Bool {
@@ -109,16 +115,69 @@ final class ChatViewModel: ObservableObject {
             return
         }
 
+        if let draftPhotoAttachment {
+            photoAttachmentStore.discard(draftPhotoAttachment)
+            self.draftPhotoAttachment = nil
+        }
+
         bubbles.removeAll()
+        photoAttachmentStore.resetSession()
     }
 
-    func send() async {
-        let prompt = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, !isBusy else {
+    func loadDraftPhoto(from item: PhotosPickerItem) async {
+        guard !isBusy else {
             return
         }
 
+        do {
+            guard let photoData = try await item.loadTransferable(type: Data.self) else {
+                throw NSError(
+                    domain: "ChatViewModel",
+                    code: 20,
+                    userInfo: [NSLocalizedDescriptionKey: "The selected photo could not be read from the photo library."]
+                )
+            }
+
+            if let draftPhotoAttachment {
+                photoAttachmentStore.discard(draftPhotoAttachment)
+            }
+
+            draftPhotoAttachment = try photoAttachmentStore.persistPhoto(data: photoData)
+            if status.hasPrefix("Ready") {
+                status = "Ready • Photo attached"
+            }
+        } catch {
+            status = status.hasPrefix("Ready") ? "Ready • Photo attach failed" : "Photo attach failed"
+        }
+    }
+
+    func removeDraftPhoto() {
+        guard let draftPhotoAttachment else {
+            return
+        }
+
+        photoAttachmentStore.discard(draftPhotoAttachment)
+        self.draftPhotoAttachment = nil
+        if status.hasPrefix("Ready") {
+            status = "Ready"
+        }
+    }
+
+    func send() async {
+        let rawPrompt = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let photoAttachment = draftPhotoAttachment
+
+        guard !isBusy else {
+            return
+        }
+
+        guard !rawPrompt.isEmpty || photoAttachment != nil else {
+            return
+        }
+
+        let prompt = rawPrompt.isEmpty ? defaultPhotoPrompt : rawPrompt
         input = ""
+        draftPhotoAttachment = nil
         isGenerating = true
         status = "Generating…"
 
@@ -126,14 +185,18 @@ final class ChatViewModel: ObservableObject {
             isGenerating = false
         }
 
-        let userBubble = ChatBubble(role: .user, text: prompt)
+        let userBubble = ChatBubble(role: .user, text: prompt, photoAttachment: photoAttachment)
         let assistantBubbleID = UUID()
 
         let history = bubbles + [userBubble]
         bubbles = history + [ChatBubble(id: assistantBubbleID, role: .assistant, text: "")]
 
         let llmMessages = [LLMMessage(role: "system", content: systemPrompt)] + history.map { bubble in
-            LLMMessage(role: bubble.role.rawValue, content: bubble.text)
+            LLMMessage(
+                role: bubble.role.rawValue,
+                content: bubble.text,
+                images: bubble.photoAttachment.map { [$0.fileURL.path] }
+            )
         }
 
         do {

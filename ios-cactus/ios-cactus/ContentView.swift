@@ -6,9 +6,12 @@
 //
 
 import SwiftUI
+import PhotosUI
+import UIKit
 
 struct ContentView: View {
     @StateObject private var viewModel = ChatViewModel()
+    @State private var selectedPhotoItem: PhotosPickerItem?
 
     var body: some View {
         NavigationStack {
@@ -21,6 +24,16 @@ struct ContentView: View {
             .navigationTitle("Cactus Gemma")
             .task {
                 await viewModel.bootIfNeeded()
+            }
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                guard let newItem else {
+                    return
+                }
+
+                Task {
+                    await viewModel.loadDraftPhoto(from: newItem)
+                    selectedPhotoItem = nil
+                }
             }
         }
     }
@@ -73,7 +86,7 @@ struct ContentView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if viewModel.bubbles.isEmpty {
-                    Text("Send a short prompt after the model loads. The app replays the full text chat history on each turn and keeps `auto_handoff` disabled.")
+                    Text("Send text, or attach a photo with an optional prompt after the model loads. The app replays the full chat history on each turn and keeps `auto_handoff` disabled.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -102,6 +115,9 @@ struct ContentView: View {
             Text(bubble.role.title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+            if let photoAttachment = bubble.photoAttachment {
+                attachmentPreview(for: photoAttachment, maxHeight: 220)
+            }
             Text(bubble.text.isEmpty ? "…" : bubble.text)
                 .font(.body)
                 .textSelection(.enabled)
@@ -113,19 +129,67 @@ struct ContentView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 12) {
-            TextField("Ask Gemma something simple…", text: $viewModel.input, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(1...5)
-                .disabled(!viewModel.canCompose)
+        VStack(alignment: .leading, spacing: 12) {
+            if let draftPhotoAttachment = viewModel.draftPhotoAttachment {
+                HStack(alignment: .top, spacing: 12) {
+                    attachmentPreview(for: draftPhotoAttachment, maxHeight: 120)
+                        .frame(width: 120)
 
-            Button(viewModel.isGenerating ? "Running…" : "Send") {
-                Task {
-                    await viewModel.send()
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Attached photo")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Gemma will receive this image path with your next user message.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Button("Remove") {
+                            viewModel.removeDraftPhoto()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(viewModel.isBusy)
+                    }
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(!viewModel.canSend)
+
+            HStack(alignment: .bottom, spacing: 12) {
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
+                    Label("Photo", systemImage: "photo")
+                }
+                .buttonStyle(.bordered)
+                .disabled(!viewModel.canCompose || viewModel.isGenerating)
+
+                TextField("Ask Gemma about text or a photo…", text: $viewModel.input, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...5)
+                    .disabled(!viewModel.canCompose)
+
+                Button(viewModel.isGenerating ? "Running…" : "Send") {
+                    Task {
+                        await viewModel.send()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!viewModel.canSend)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func attachmentPreview(for photoAttachment: PhotoAttachment, maxHeight: CGFloat) -> some View {
+        if let image = UIImage(contentsOfFile: photoAttachment.fileURL.path) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxHeight: maxHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        } else {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemBackground))
+                .frame(height: maxHeight)
+                .overlay {
+                    Label("Image unavailable", systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
         }
     }
 }

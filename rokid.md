@@ -1,0 +1,308 @@
+# Rokid HVAC Copilot
+
+This repo now contains a complete Mac-hosted Rokid workflow:
+
+- `rokid/` is the Android app that runs on the Rokid glasses.
+- `src/main.py` is the Mac Python server.
+- `web/` is the browser operator UI for transcript, tool activity, and Rokid preview.
+
+This is the only flow described here. Older iOS or other archived experiments are out of scope for this document.
+
+## Overview
+
+The app turns the Rokid glasses into the field interface for HVAC Copilot.
+
+- The glasses send live camera and microphone audio to the Mac over WebRTC.
+- The Mac server performs turn detection, English transcription, Gemma/Cactus reasoning, tool calls, and text-to-speech.
+- The assistant reply is spoken back through the Rokid glasses speaker.
+- If the browser UI is open, it also shows the live transcript, tool activity, session state, Rokid preview, and mirrored reply audio.
+
+Current assumptions:
+
+- The Python server runs on macOS only.
+- Speech is English-only.
+- The Mac is the local hub for both the web UI and the Rokid bridge endpoint.
+
+## Architecture
+
+### Components
+
+- `rokid/app/src/main/java/com/example/rokidiosbridge/MainActivity.kt`
+  Handles permissions, reconnects, and the wearable HUD.
+- `rokid/app/src/main/java/com/example/rokidiosbridge/RokidBridgePeer.kt`
+  Creates the WebRTC offer, publishes camera + mic, receives assistant audio, and handles the control data channel.
+- `src/main.py`
+  FastAPI entrypoint. Hosts the web UI, browser WebSocket, Rokid `/session` endpoint, and Rokid state/preview APIs.
+- `src/rokid_bridge.py`
+  Mac-side Rokid WebRTC bridge. Terminates the peer connection, keeps the latest preview frame, runs speech I/O, and streams synthesized audio back to the glasses.
+- `src/speech_io.py`
+  Speech pipeline for Rokid mode: Silero VAD, `faster-whisper`, and Kokoro.
+- `src/assistant_runtime.py`
+  Shared assistant session/runtime used by both browser and Rokid turns.
+
+### Data flow
+
+1. The Rokid app opens a WebRTC session to `POST /session` on the Mac.
+2. The app sends:
+   - video track from the glasses camera
+   - audio track from the glasses microphone
+   - control messages over the `bridge-control` data channel
+3. The Mac server:
+   - keeps a preview JPEG/MJPEG stream for the web UI
+   - resamples audio to 16 kHz mono
+   - runs Silero VAD to detect user turn boundaries
+   - transcribes finalized utterances with `faster-whisper`
+   - runs the existing Gemma/Cactus HVAC assistant and tool loop
+   - synthesizes the reply with Kokoro
+   - sends the synthesized audio back as a remote WebRTC audio track
+4. The Rokid app plays the remote assistant audio and shows short status/display text in the HUD.
+5. The browser UI, if open, mirrors the same transcript and session updates and can play the same synthesized reply audio locally.
+
+### Speech stack
+
+For Rokid mode the Mac server uses:
+
+- VAD: `silero-vad`
+- STT: `faster-whisper` with `small.en`
+- TTS: Kokoro with American English `lang_code="a"` and voice `af_heart`
+
+The browser UI still has its original browser speech features. For Rokid turns it now also mirrors the Mac-generated Kokoro reply audio, so the operator can hear the same answer locally without relying on browser speech synthesis.
+
+The current default Rokid VAD tuning is intentionally biased toward rejecting background noise:
+
+- `ROKID_VAD_START_THRESHOLD=0.78`
+- `ROKID_VAD_END_THRESHOLD=0.58`
+- `ROKID_VAD_MIN_SILENCE_MS=280`
+- `ROKID_VAD_MIN_SPEECH_MS=320`
+- `ROKID_AUDIO_GATE_DB_OFFSET=12`
+- `ROKID_AUDIO_END_GATE_DB_OFFSET=7`
+- `ROKID_AUDIO_GATE_MIN_DBFS=-44`
+
+## Setup
+
+### 1. Install Mac prerequisites
+
+On the Mac that runs the Python server:
+
+```bash
+brew install espeak-ng
+```
+
+Then install Python dependencies into the same Python environment that will run the server.
+
+This project assumes the server is started from `cactus/venv`, so install into that env explicitly:
+
+```bash
+cactus/venv/bin/pip install -r requirements.txt
+```
+
+That installs the Rokid bridge and speech dependencies, including `aiortc`, Silero VAD, `faster-whisper`, and Kokoro.
+
+Do not rely on plain `pip install -r requirements.txt` unless `pip` already points at `cactus/venv`. If the server runs from one interpreter and the Rokid packages were installed into another, `POST /session` will fail with `503 Service Unavailable`.
+
+Optional verification from the repo root:
+
+```bash
+cactus/venv/bin/python -c "from src.main import rokid_bridge; import json; print(json.dumps(rokid_bridge.snapshot(), indent=2))"
+```
+
+Before you connect the glasses, that output should show:
+
+- `"available": true`
+- `"speech_backend_ready": true` after startup prewarm completes, or at least no import-related dependency error
+
+### 2. Start the Mac server
+
+From the repo root:
+
+```bash
+cactus/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8000
+```
+
+When the server is up:
+
+- Web UI: `http://127.0.0.1:8000/`
+- Rokid session endpoint: `http://<MAC_IP>:8000/session`
+
+The Rokid state shown in `/healthz` or the browser UI will report whether the speech backend is ready.
+
+### 3. Configure the Rokid Android app
+
+Create:
+
+```text
+rokid/local.properties
+```
+
+with:
+
+```properties
+BRIDGE_SESSION_URL=http://<MAC_IP>:8000/session
+```
+
+Use the Mac's LAN IP address reachable from the glasses. If you run the server on a different port, update the URL to match.
+
+`local.properties` is intentionally ignored by git in this repo.
+
+### 4. Build and install the Rokid app
+
+From the repo root:
+
+```bash
+cd rokid
+./gradlew :app:assembleDebug
+```
+
+Then open the `rokid/` project in Android Studio, install it on the glasses, and grant:
+
+- camera permission
+- microphone permission
+
+### 5. Open the browser UI
+
+Open:
+
+```text
+http://127.0.0.1:8000/
+```
+
+The UI now has a dedicated Rokid panel that shows:
+
+- connection status
+- ICE state
+- control channel state
+- speech state
+- live speech debug metrics
+- latest Rokid preview stream
+- last transcribed user utterance
+- last assistant reply
+
+## Using the app
+
+### On the glasses
+
+- Launch the app.
+- Keep it in the foreground.
+- The app automatically tries to connect to the configured Mac bridge URL.
+- Press `Enter` or the center touchpad button to force a reconnect if needed.
+- When the app leaves the foreground or is closed, it intentionally stops the WebRTC session. Opening the app again starts a fresh connection from the beginning.
+
+The HUD shows:
+
+- backend URL
+- connection state
+- short status text such as listening/thinking
+- compact assistant/user text
+- recent logs
+
+### On the Mac
+
+- Start the server first.
+- Open the browser UI if you want live monitoring.
+- Wait for the Rokid panel to show an active session and preview.
+
+### Conversation behavior
+
+- The glasses microphone is always-on from the app side.
+- The Mac server decides turn boundaries with VAD.
+- Once a Rokid utterance starts a Gemma turn, additional Rokid speech is ignored until the assistant finishes thinking and speaking the reply.
+- This is intentional in the current app: Rokid mode favors single-turn stability over barge-in so the server does not keep canceling and restarting Gemma.
+- Assistant replies are played on the Rokid speaker.
+- If the browser UI is open, it also receives the same assistant events and plays the same synthesized reply audio locally.
+
+## Important files
+
+- `rokid/app/build.gradle.kts`
+  Reads `BRIDGE_SESSION_URL` from `rokid/local.properties`.
+- `rokid/app/src/main/AndroidManifest.xml`
+  Declares camera, mic, network, and wake-lock permissions.
+- `src/main.py`
+  Main app server.
+- `src/rokid_bridge.py`
+  Rokid WebRTC bridge and audio-return path.
+- `src/speech_io.py`
+  Speech pipeline used for Rokid mode.
+- `web/index.html`
+  Browser UI layout including the Rokid panel.
+
+## Latency logs
+
+The server writes one JSONL session log per run under:
+
+```text
+logs/session_<unix_ts>_<pid>.jsonl
+```
+
+For Rokid turns, the detailed latency record is the `rokid_trace` event. Each `rokid_trace` line includes:
+
+- `turn_id`
+- `speech_to_finalize_ms`
+- `stt_ms`
+- `submit_to_assistant_ms`
+- `llm_ttft_ms`
+- `llm_turn_total_ms`
+- `tool_total_ms`
+- `tts_synth_ms`
+- `assistant_to_audio_enqueue_ms`
+- `audio_playback_ms`
+- `speech_to_audio_enqueue_ms`
+- `speech_to_audio_finish_ms`
+
+The log also keeps lower-level span events such as:
+
+- `rokid_utterance_finalized`
+- `rokid_stt_start`
+- `rokid_stt_end`
+- `turn_submit`
+- `turn_start`
+- `complete_start`
+- `complete_end`
+- `tool_call`
+- `rokid_assistant_final`
+- `rokid_tts_start`
+- `rokid_tts_end`
+- `rokid_audio_enqueued`
+- `rokid_audio_playback_expected_end`
+
+Quick ways to inspect the log while the server is running:
+
+```bash
+tail -f logs/session_*.jsonl
+```
+
+```bash
+curl -s http://127.0.0.1:8000/logs/summary
+```
+
+`/logs/summary` now includes `recent_rokid_traces`, which is the fastest way to see the latest per-turn latency breakdowns.
+
+For raw recent events:
+
+```bash
+curl -s "http://127.0.0.1:8000/logs/recent?n=300"
+```
+
+If you have `jq`, this filters only the completed Rokid turn traces:
+
+```bash
+curl -s "http://127.0.0.1:8000/logs/recent?n=300" | jq '.events[] | select(.kind == "rokid_trace")'
+```
+
+To download the full current session log:
+
+```bash
+curl -OJ http://127.0.0.1:8000/logs/download
+```
+
+## Troubleshooting
+
+- If you close or background the Rokid app and expect it to stay connected, that is not the current behavior. The app now disconnects on background so the next launch renegotiates a clean session.
+- If `POST /session` returns `503 Service Unavailable`, the usual cause is that the Python env running the server is missing Rokid dependencies such as `aiortc` or `silero-vad`. Re-run `cactus/venv/bin/pip install -r requirements.txt`, then restart the server from `cactus/venv/bin/python`.
+- If the glasses connect but there is no assistant speech, verify `brew install espeak-ng` was run and check `/healthz` or the browser Rokid panel for `speech_backend_error`.
+- If background noise triggers too easily, the current defaults are already stricter than the original setup. To make them stricter still, raise `ROKID_VAD_START_THRESHOLD`, `ROKID_VAD_END_THRESHOLD`, `ROKID_VAD_MIN_SPEECH_MS`, `ROKID_AUDIO_GATE_DB_OFFSET`, or `ROKID_AUDIO_GATE_MIN_DBFS`, then restart the server.
+- If camera works but nothing is transcribed, watch the Rokid panel's `Speech debug` block or inspect `rokid.speech_debug` from `/healthz`. When you speak, `speech_prob` should rise and `speech_ms` should increase. After you stop, `silence_ms` should rise and an utterance should finalize. If needed, tune `ROKID_VAD_START_THRESHOLD`, `ROKID_VAD_END_THRESHOLD`, `ROKID_VAD_MIN_SILENCE_MS`, or `ROKID_AUDIO_GATE_MIN_DBFS` in the server environment.
+- If the server logs `rokid: could not resolve local IPv4 addresses`, that is the Mac hostname lookup failing. It only affects the example session URL shown in the UI. Use the explicit `BRIDGE_SESSION_URL` in `rokid/local.properties`; the actual Rokid connection does not depend on hostname auto-discovery.
+- If the HUD says the backend URL is missing, check `rokid/local.properties`.
+- If the browser shows Rokid unavailable, inspect `/healthz` and the server logs for dependency errors.
+- If the glasses never connect, confirm the Mac and glasses are on the same reachable network and that the configured `BRIDGE_SESSION_URL` points to the Mac's actual LAN IP.
+- If you changed the server port, update both the server launch command and `BRIDGE_SESSION_URL`.

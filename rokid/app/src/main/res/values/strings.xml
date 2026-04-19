@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Rokid Web Bridge</string>
+    <string name="display_heading">Display</string>
+    <string name="log_heading">Events</string>
+    <string name="display_waiting">Waiting for Mac control text.</string>
+    <string name="status_initializing">Starting Mac bridge…</string>
+    <string name="status_ready">Ready for the Mac backend.</string>
+    <string name="status_permissions_denied">Camera and microphone permissions are required.</string>
+    <string name="status_background">Bridge disconnected while app is in background.</string>
+    <string name="control_hint">Press Enter to reconnect to the Mac bridge.</string>
+</resources>

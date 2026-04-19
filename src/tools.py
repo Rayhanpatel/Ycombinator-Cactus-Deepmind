@@ -1,5 +1,5 @@
 """
-HVAC tool dispatcher — 5 tools that Gemma 4 can call during an On-Site session.
+HVAC tool dispatcher — 6 tools that Gemma 4 can call during an On-Site session.
 
 Schemas are loaded from shared/hvac_tools.json (frozen contract shared with
 the iOS scaffold). Each session gets its own HVACToolDispatcher bound to
@@ -36,7 +36,7 @@ def get_tools_json() -> str:
 
 
 class HVACToolDispatcher:
-    """Per-session dispatcher for the 5 HVAC tools."""
+    """Per-session dispatcher for the 6 HVAC tools."""
 
     def __init__(
         self,

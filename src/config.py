@@ -45,6 +45,23 @@ class Config:
     # ── Audio ─────────────────────────────────────────────────
     AUDIO_SAMPLE_RATE: int = int(os.getenv("AUDIO_SAMPLE_RATE", "16000"))
     VAD_SENSITIVITY: float = float(os.getenv("VAD_SENSITIVITY", "0.5"))
+    ROKID_VAD_START_THRESHOLD: float = float(os.getenv("ROKID_VAD_START_THRESHOLD", "0.78"))
+    ROKID_VAD_END_THRESHOLD: float = float(
+        os.getenv("ROKID_VAD_END_THRESHOLD", "0.58")
+    )
+    ROKID_VAD_MIN_SILENCE_MS: int = int(os.getenv("ROKID_VAD_MIN_SILENCE_MS", "280"))
+    ROKID_VAD_MIN_SPEECH_MS: int = int(os.getenv("ROKID_VAD_MIN_SPEECH_MS", "320"))
+    ROKID_VAD_SPEECH_PAD_MS: int = int(os.getenv("ROKID_VAD_SPEECH_PAD_MS", "96"))
+    ROKID_AUDIO_GATE_DB_OFFSET: float = float(os.getenv("ROKID_AUDIO_GATE_DB_OFFSET", "12.0"))
+    ROKID_AUDIO_END_GATE_DB_OFFSET: float = float(os.getenv("ROKID_AUDIO_END_GATE_DB_OFFSET", "7.0"))
+    ROKID_AUDIO_GATE_MIN_DBFS: float = float(os.getenv("ROKID_AUDIO_GATE_MIN_DBFS", "-44.0"))
+    SPEECH_LANGUAGE: str = os.getenv("SPEECH_LANGUAGE", "en")
+    SPEECH_STT_MODEL: str = os.getenv("SPEECH_STT_MODEL", "small.en")
+    SPEECH_STT_DEVICE: str = os.getenv("SPEECH_STT_DEVICE", "cpu")
+    SPEECH_STT_COMPUTE_TYPE: str = os.getenv("SPEECH_STT_COMPUTE_TYPE", "int8")
+    SPEECH_TTS_LANG_CODE: str = os.getenv("SPEECH_TTS_LANG_CODE", "a")
+    SPEECH_TTS_VOICE: str = os.getenv("SPEECH_TTS_VOICE", "af_heart")
+    ROKID_PUBLIC_PORT: int = int(os.getenv("ROKID_PUBLIC_PORT", os.getenv("PORT", "8000")))
 
     # ── Paths ─────────────────────────────────────────────────
     PROJECT_ROOT: Path = _project_root

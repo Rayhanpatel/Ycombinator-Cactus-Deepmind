@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="hud_black">#FF000000</color>
+    <color name="hud_white">#FFFFFFFF</color>
+    <color name="hud_muted_white">#FFB3B3B3</color>
+    <color name="hud_letterbox_gray">#FF262626</color>
+</resources>

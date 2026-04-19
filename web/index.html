@@ -47,7 +47,37 @@
 
   <aside class="side">
     <section class="pane">
-      <h2>Camera</h2>
+      <h2>Rokid</h2>
+      <div class="rokid-wrap">
+        <div class="rokid-preview-wrap">
+          <img id="rokid-preview" class="rokid-preview hidden" alt="Rokid live preview" />
+          <div id="rokid-empty" class="rokid-empty">Waiting for Rokid glasses…</div>
+        </div>
+        <div id="rokid-url" class="rokid-url"></div>
+        <div class="session">
+          <div class="session-row"><span>Link</span><span id="rokid-connection">idle</span></div>
+          <div class="session-row"><span>ICE</span><span id="rokid-ice">new</span></div>
+          <div class="session-row"><span>Control</span><span id="rokid-control">closed</span></div>
+          <div class="session-row"><span>Speech</span><span id="rokid-speech">idle</span></div>
+        </div>
+        <div class="rokid-copy">
+          <div class="rokid-copy-head">Last heard</div>
+          <div id="rokid-last-user" class="rokid-copy-body">—</div>
+        </div>
+        <div class="rokid-copy">
+          <div class="rokid-copy-head">Last reply</div>
+          <div id="rokid-last-assistant" class="rokid-copy-body">—</div>
+        </div>
+        <div class="rokid-copy">
+          <div class="rokid-copy-head">Speech debug</div>
+          <div id="rokid-speech-debug" class="rokid-copy-body rokid-copy-body-mono">—</div>
+        </div>
+        <button type="button" id="rokid-disconnect" class="secondary">Disconnect glasses</button>
+      </div>
+    </section>
+
+    <section class="pane">
+      <h2>Browser Camera</h2>
       <div class="camera-wrap">
         <video id="cam" autoplay muted playsinline></video>
         <canvas id="cam-canvas" class="hidden"></canvas>

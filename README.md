@@ -1,157 +1,199 @@
 # HVAC Copilot
 
-HVAC Copilot runs Gemma 4 E4B on a Mac via Cactus and exposes two field interfaces that share the same assistant runtime:
+> **A senior HVAC tech in your earbuds.** Gemma 4 E4B runs 100% on-device via
+> Cactus on an M4 MacBook Pro. Three clients — browser, iPhone Safari, and
+> Rokid AR glasses — all share the same assistant runtime and the same 6 HVAC
+> tools. On-device by default; one explicit online-escalation tool is the only
+> networked path.
 
-- A browser webapp for Mac Chrome and iPhone Safari.
-- A Rokid glasses app that streams camera + mic over WebRTC to the Mac.
+[![Cactus](https://img.shields.io/badge/Powered_by-Cactus-green)](https://cactuscompute.com)
+[![Gemma 4 E4B](https://img.shields.io/badge/Model-Gemma_4_E4B-blue)](https://ai.google.dev/gemma)
+[![YC × DeepMind](https://img.shields.io/badge/Hackathon-YC_%C3%97_DeepMind-orange)](https://events.ycombinator.com/voice-agents-hackathon26)
 
-Both flows use the same HVAC tools and KB. Most behavior is on-device. The only networked path is the explicit `search_online_hvac` escalation tool, and the UI calls that out with a visible `🌐` banner.
+Built at the YC × Cactus × Google DeepMind Voice Agents Hackathon, April 19–20 2026.
+Post-hackathon consolidation tag: `v1.0-consolidated`. Submission snapshot: `v0.9-hackathon-submission`.
 
-## Docs
+---
 
-- `README.md`: setup and repo map.
-- `HANDOFF.md`: latest browser/mac-webapp handoff and demo notes.
-- `rokid.md`: latest Rokid workflow, tuning, and troubleshooting notes.
+## The pitch
 
-## Repo Map
+Senior HVAC techs are retiring faster than juniors can replace them; first-time-fix
+rate is the metric field service companies obsess over. HVAC Copilot puts a senior
+tech on every truck: a voice + vision agent running Gemma 4 E4B on a MacBook Pro
+M4 via Cactus Python. The tech describes a symptom, the model sees what the camera
+sees, retrieves matching past cases from a curated 18-entry KB across 15+ brands,
+coaches through the fix one step at a time, and emits a structured resolution
+record at close. Zero API calls by default, zero data off device.
 
-```text
-src/
-├── main.py                 FastAPI entrypoint for browser + Rokid
-├── assistant_runtime.py    Shared Gemma/tool-call runtime
-├── rokid_bridge.py         Mac-side WebRTC bridge for Rokid
-├── speech_io.py            Silero VAD + faster-whisper + Kokoro
-├── tools.py                HVAC tool dispatcher
-├── online_search.py        Explicit online escalation tool
-├── kb_store.py             Keyword-scored KB loader/search
-├── findings_store.py       Per-session findings/safety/scope state
-├── session_log.py          JSONL session logging
-└── config.py               Env-backed configuration
+## Three ways to run it
 
-web/                        Browser UI
-rokid/                      Android app for the Rokid glasses
-shared/hvac_tools.json      Frozen 6-tool contract
-kb/                         18 curated HVAC entries
-tests/                      Unit + smoke tests
-```
+Pick one — they all connect to the same Mac-side FastAPI server and speak to the
+same Gemma 4 runtime via `src/assistant_runtime.py`.
 
-## Prereqs
-
-- macOS on Apple Silicon.
-- Python environment at `cactus/venv`.
-- The Cactus repo cloned into `cactus/` and built for Python.
-- Gemma 4 E4B weights available at `cactus/weights/gemma-4-e4b-it/`.
-- `espeak-ng` installed on the Mac for Kokoro speech output:
+### 1. Browser on Mac Chrome
 
 ```bash
-brew install espeak-ng
-```
-
-- Optional: Android Studio / JDK 17 if you want to build the Rokid app.
-- Optional: Reddit credentials for the online escalation tool. If you do not set them, the app falls back to anonymous Reddit JSON search.
-
-## Python Setup
-
-Most people can start with defaults. `.env` is optional unless you want to override models, speech settings, or add Reddit credentials.
-
-```bash
-cp .env.example .env
+# One-time setup
+brew install espeak-ng                                    # Kokoro TTS backend
 cactus/venv/bin/pip install -r requirements.txt
-```
 
-## Run The Mac Server
-
-```bash
+# Start the server
 cactus/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8000
 ```
 
-Useful endpoints once the server is up:
+Open `http://127.0.0.1:8000/`. Browser mic (PCM16 LE) + 1 fps camera keyframes
+over WebSocket. Browser-native Web Speech API for TTS.
 
-- Browser UI: `http://127.0.0.1:8000/`
-- Health: `http://127.0.0.1:8000/healthz`
-- Recent log events: `http://127.0.0.1:8000/logs/recent?n=100`
-- Log summary: `http://127.0.0.1:8000/logs/summary`
-- Rokid SDP endpoint: `http://<MAC_IP>:8000/session`
+### 2. iPhone Safari over LAN
 
-Quick sanity check:
+Same server, but Safari needs HTTPS to grant mic/camera over the network. Use
+`mkcert` for LAN certs, then:
 
 ```bash
-curl -s http://127.0.0.1:8000/healthz
+mkcert <MAC_LAN_IP>                                       # generates *-key.pem + *.pem
+cactus/venv/bin/python -m uvicorn src.main:app \
+  --host 0.0.0.0 --port 8443 \
+  --ssl-keyfile  ./<MAC_LAN_IP>+2-key.pem \
+  --ssl-certfile ./<MAC_LAN_IP>+2.pem
 ```
 
-## Browser Flow
+On the iPhone: join the same Wi-Fi (or the Mac's Personal Hotspot), open
+`https://<MAC_LAN_IP>:8443/`, tap through the cert trust prompt once. The UI
+reflows for mobile (stacked composer, safe-area insets for the notch).
 
-Open `http://127.0.0.1:8000/` in Chrome on the Mac.
+Full walk-through in [HANDOFF.md §1](HANDOFF.md).
 
-- Use text input, browser speech recognition, or both.
-- Enable the browser camera if you want multimodal turns.
-- Tool activity, session state, safety alerts, Rokid status, and online-search banners all appear in the same UI.
+### 3. Rokid AR glasses
 
-For the detailed browser/iPhone demo path, LAN HTTPS notes, and current behavior assumptions, use `HANDOFF.md`.
-
-## Rokid Flow
-
-Create `rokid/local.properties`:
-
-```properties
-BRIDGE_SESSION_URL=http://<MAC_IP>:8000/session
-```
-
-Build the app:
+The Kotlin Android app under [rokid/](rokid/) opens a WebRTC peer to
+`POST /session` on the Mac and streams camera + mic bidirectionally. The Mac
+runs Silero VAD + faster-whisper STT + Kokoro TTS and speaks replies back
+through the glasses.
 
 ```bash
-cd rokid
-./gradlew :app:assembleDebug
+# Tell the glasses where the Mac is
+echo "BRIDGE_SESSION_URL=http://<MAC_LAN_IP>:8000/session" > rokid/local.properties
+
+# Build + install
+cd rokid && ./gradlew :app:assembleDebug
+# (install the resulting APK on the glasses via Android Studio or adb)
 ```
 
-Then install the debug build on the glasses and grant camera + microphone permissions.
+With the Rokid app in the foreground, the browser UI (if open) shows Rokid
+connection state, a live MJPEG preview, speech-debug metrics, and the last
+heard/replied text. Full setup + tuning notes in [rokid.md](rokid.md).
 
-Once the Mac server is running:
+## The 6 HVAC tools
 
-- Keep the Rokid app in the foreground.
-- The app will connect to the configured `BRIDGE_SESSION_URL`.
-- The browser UI will show Rokid connection state, preview, speech debug, and the last heard/replied text.
+Each tool's schema lives in [shared/hvac_tools.json](shared/hvac_tools.json) and
+is dispatched by [src/tools.py](src/tools.py). Five run 100% on-device; one is
+an explicit, UI-visible online escalation:
 
-For speech tuning, latency traces, and Rokid troubleshooting, use `rokid.md`.
+- **`query_kb(query, equipment_model?)`** — keyword-scored search over the 18
+  curated KB entries.
+- **`log_finding(location, issue, severity, part_number?, notes?)`** — records
+  a diagnosed problem.
+- **`flag_safety(hazard, immediate_action, level)`** — `level=stop` halts the
+  session and fires the red banner.
+- **`flag_scope_change(original_scope, new_scope, reason, estimated_extra_time_minutes?)`**.
+- **`close_job(summary, parts_used, follow_up_required, follow_up_notes?)`** —
+  emits the structured resolution record.
+- **`search_online_hvac(query)` 🌐** — escalation ONLY. Queries r/HVAC +
+  r/hvacadvice + r/Refrigeration via [src/online_search.py](src/online_search.py)
+  (PRAW with credentials, anonymous JSON fallback otherwise). Every call surfaces
+  an amber 🌐 card in the tool-activity panel and a banner explaining that the
+  query went to reddit.com. The system prompt forbids auto-chaining from
+  `query_kb`.
 
-## Online Escalation
+## Architecture
 
-`search_online_hvac` is preserved on this branch and is available from both browser and Rokid conversations.
+```text
+Browser (Chrome / iPhone Safari)
+───────────────────────────────
+[mic PCM16 LE]──┐
+[camera 1fps]   ├── WebSocket ── /ws/session ──┐
+[text input]────┘                              │
+                                               │    Mac M4 Pro (FastAPI + Cactus)
+                                               │    ─────────────────────────────
+Rokid AR glasses                               ├──→ src/assistant_runtime.py
+────────────────                               │       ├─→ Gemma 4 E4B (via src/cactus)
+[H.264 video]──┐                               │       ├─→ HVACToolDispatcher
+[audio RTP]    ├── WebRTC ─── POST /session ───┤       │     ├─ query_kb (kb/*.json)
+[data channel] ┘   aiortc SDP                  │       │     ├─ log_finding
+                                               │       │     ├─ flag_safety
+                                               │       │     ├─ flag_scope_change
+                                               │       │     ├─ close_job
+                                               │       │     └─ search_online_hvac 🌐
+                                               │       │
+                                               │       └─→ src/speech_io.py  (Rokid path only)
+                                               │            ├─ Silero VAD
+                                               │            ├─ faster-whisper STT
+                                               │            └─ Kokoro TTS
+                                               │
+[tokens + tool_call events + rokid_state] ←────┘
+```
 
-- It is only for explicit “look online / check Reddit / field reports” requests or rare equipment.
-- Every call is visible in the UI.
-- With `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`, the server uses the authenticated fetcher.
-- Without those vars, it falls back to anonymous Reddit JSON search.
+One shared Cactus handle; per-session `FindingsStore` + conversation history;
+3-pass tool-call loop so chained calls land in a single turn. The browser path
+uses Web Speech API for TTS; the Rokid path uses on-device Kokoro.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full set of Mermaid
+diagrams.
+
+## Where iOS is
+
+Retired for now. Two retired artefacts are preserved in-tree as reference:
+
+- [archive/ios-abandoned/](archive/ios-abandoned/) — the Cactus wiring spike
+  (`CactusModel` actor, tool dispatcher, KB store, findings store).
+- [archive/ios-ui-swiftui-spike/](archive/ios-ui-swiftui-spike/) — teammate
+  tash-2s's SwiftUI component library (11 components + screens + theme).
+
+The native iOS path is blocked on Cactus's Apple SDK (XCFramework / SPM)
+stabilising. Once it does, the thin-client swap is: take the SwiftUI views,
+drop in the Cactus actor, replace the WebSocket with a direct Cactus call.
+
+## Measured performance
+
+On MacBook Pro M4 Pro (CPU, no ANE — Cactus hasn't published an ANE-compiled
+`model.mlpackage` for Gemma 4 E4B yet):
+
+| Metric | Value (from session logs) |
+| --- | --- |
+| Model load | ~4–6 s (one-time at server start) |
+| TTFT — bare model, no tools | ~217 ms |
+| TTFT — full HVAC system (tools + prompt + history) | ~3.9–4.5 s |
+| Decode speed | ~17 tok/s |
+| Prefill tokens per turn (text, no image) | ~935 |
+| Prefill tokens per turn (with 448 px keyframe) | ~1400 |
+| KB retrieval over 18 entries | <1 ms |
+| `tests/smoke_hvac.py` 8-case benchmark | 7/8 tool-match, 7/8 arg-match |
+| Rokid end-to-end latency | _TBD — measure post-consolidation_ |
+
+The bare-model 217 ms baseline is what Cactus reports when only a short system
+prompt + user message are prefilled. In the HVAC app we pay the cost of 6 tool
+schemas + a rules-heavy system prompt + accumulated turn history, which is what
+drags TTFT to ~4 s.
 
 ## Tests
 
-Fastest smoke test:
-
 ```bash
-cactus/venv/bin/python -m pytest tests/test_tools.py -q
+cactus/venv/bin/python -m pytest tests/ -q                     # full suite
+cactus/venv/bin/python tests/smoke_ws.py "Carrier 58STA intermittent cooling clicking"   # live WS
+cactus/venv/bin/python tests/smoke_rokid.py                    # Rokid state endpoint
 ```
 
-Full Python test suite:
+## Docs
 
-```bash
-cactus/venv/bin/python -m pytest tests/ -q
-```
-
-Live WebSocket smoke test against a running server:
-
-```bash
-cactus/venv/bin/python tests/smoke_ws.py "Carrier 58STA intermittent cooling clicking"
-```
-
-## Key Files
-
-- `src/main.py`: HTTP, WebSocket, and Rokid endpoints.
-- `src/assistant_runtime.py`: shared turn loop, tool dispatch, and browser/Rokid event fanout.
-- `src/rokid_bridge.py`: WebRTC session handling, preview stream, and assistant-audio return path.
-- `src/speech_io.py`: speech segmentation, transcription, and synthesis.
-- `src/online_search.py`: explicit online HVAC escalation.
-- `shared/hvac_tools.json`: 6-tool schema contract.
+- [README.md](README.md) — this file.
+- [HANDOFF.md](HANDOFF.md) — engineering handoff, live path details, landmines.
+- [rokid.md](rokid.md) — Rokid-specific setup, speech tuning, troubleshooting.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Mermaid diagrams + tech stack.
+- [docs/idea.md](docs/idea.md) — product vision.
+- [archive/voice-sight-spike/](archive/voice-sight-spike/) — retired multimodal backend spike.
+- [archive/ios-ui-swiftui-spike/](archive/ios-ui-swiftui-spike/) — retired iOS SwiftUI scaffold.
+- [archive/ios-abandoned/](archive/ios-abandoned/) — retired iOS Cactus wiring scaffold.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

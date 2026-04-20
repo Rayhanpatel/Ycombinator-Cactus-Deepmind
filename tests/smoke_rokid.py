@@ -53,11 +53,19 @@ def main() -> int:
         except json.JSONDecodeError as e:
             failures.append(f"/api/rokid/state returned non-JSON: {e}")
             payload = {}
-        if "connected" not in payload:
-            failures.append("/api/rokid/state missing `connected` key")
+        # The bridge reports connection state via `session_active` and
+        # `connection_state`. Both should be present whether or not a peer
+        # is currently connected.
+        missing = [k for k in ("session_active", "connection_state") if k not in payload]
+        if missing:
+            failures.append(f"/api/rokid/state missing keys: {missing}")
         else:
-            connected = payload.get("connected")
-            print(f"[state] connected={connected} keys={sorted(payload.keys())}")
+            print(
+                f"[state] session_active={payload['session_active']} "
+                f"connection_state={payload['connection_state']} "
+                f"ice={payload.get('ice_connection_state')} "
+                f"speech_backend_ready={payload.get('speech_backend_ready')}"
+            )
 
     # 2. /api/rokid/preview/latest.jpg should respond (200 with JPEG, or 404/503 when no peer)
     status, body = _get("/api/rokid/preview/latest.jpg")

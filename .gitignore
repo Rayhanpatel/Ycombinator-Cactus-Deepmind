@@ -72,6 +72,10 @@ Thumbs.db
 .Spotlight-V100
 .Trashes
 
+# macOS Finder / iCloud duplicate-copy artefacts (e.g. `main 2.py`, `gradlew 2`)
+*\ 2
+*\ 2.*
+
 # Audio temp files
 *.wav.tmp
 recordings/

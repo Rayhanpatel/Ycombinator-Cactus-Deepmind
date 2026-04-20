@@ -31,13 +31,30 @@ const camEl = $("cam");
 const camBtn = $("cam-btn");
 const camCanvas = $("cam-canvas");
 const stopBtn = $("stop-btn");
+const rokidPreview = $("rokid-preview");
+const rokidEmpty = $("rokid-empty");
+const rokidUrl = $("rokid-url");
+const rokidConnection = $("rokid-connection");
+const rokidIce = $("rokid-ice");
+const rokidControl = $("rokid-control");
+const rokidSpeech = $("rokid-speech");
+const rokidLastUser = $("rokid-last-user");
+const rokidLastAssistant = $("rokid-last-assistant");
+const rokidSpeechDebug = $("rokid-speech-debug");
+const rokidDisconnectBtn = $("rokid-disconnect");
 
 let ws;
 let currentAssistantMsg = null;
+let currentAssistantSource = null;
+let currentAssistantFinalOnly = false;
 let videoStream = null;
 let pendingFrameB64 = null;
 let frameInterval = null;
 let isGenerating = false;   // true from send → assistant_end
+let rokidPreviewKey = "";
+let remoteAudioEl = null;
+let remoteAudioUrl = "";
+let pendingRokidAudioFallback = null;
 
 // ── Web Speech API (STT) ────────────────────────────────────
 // Wine_Voice_AI pattern: Chrome does transcription in-browser. No PCM goes
@@ -169,16 +186,101 @@ function queueSpeech(text) {
   playNext();
 }
 
+function clearPendingRokidAudioFallback() {
+  if (pendingRokidAudioFallback) {
+    clearTimeout(pendingRokidAudioFallback);
+    pendingRokidAudioFallback = null;
+  }
+}
+
+function maybeResumeReadyState() {
+  if (isGenerating || isSpeaking || speechQueue.length > 0) return;
+  setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
+  if (handsFree) {
+    setTimeout(() => {
+      suppressOnResult = false;
+      startRecognition();
+    }, TTS_COOLDOWN_MS);
+  }
+}
+
+function clearRemoteAudio() {
+  const audio = remoteAudioEl;
+  const url = remoteAudioUrl;
+  remoteAudioEl = null;
+  remoteAudioUrl = "";
+
+  if (audio) {
+    audio.onplay = null;
+    audio.onended = null;
+    audio.onerror = null;
+    audio.pause();
+  }
+  if (url) {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function stopAllPlayback() {
+  window.speechSynthesis.cancel();
+  speechQueue.length = 0;
+  sentenceBuffer = "";
+  isSpeaking = false;
+  clearPendingRokidAudioFallback();
+  clearRemoteAudio();
+}
+
+function decodeBase64Audio(b64) {
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function playRemoteAssistantAudio(evt) {
+  const audioB64 = evt.audio_b64 || "";
+  if (!audioB64) {
+    maybeResumeReadyState();
+    return;
+  }
+  clearPendingRokidAudioFallback();
+  stopAllPlayback();
+
+  const mimeType = evt.mime_type || "audio/wav";
+  const blob = new Blob([decodeBase64Audio(audioB64)], { type: mimeType });
+  remoteAudioUrl = URL.createObjectURL(blob);
+  const audio = new Audio(remoteAudioUrl);
+  audio.autoplay = true;
+  audio.preload = "auto";
+  audio.playsInline = true;
+  remoteAudioEl = audio;
+
+  const finish = () => {
+    isSpeaking = false;
+    clearRemoteAudio();
+    maybeResumeReadyState();
+  };
+
+  audio.onplay = () => {
+    isSpeaking = true;
+    setStatus("speaking…", "thinking");
+  };
+  audio.onended = finish;
+  audio.onerror = () => {
+    addMessage("system-note", "[rokid browser audio failed]");
+    finish();
+  };
+
+  audio.play().catch((err) => {
+    addMessage("system-note", `[rokid browser audio blocked: ${err.message}]`);
+    finish();
+  });
+}
+
 function playNext() {
   if (isSpeaking) return;
   if (speechQueue.length === 0) {
-    // Done speaking; re-enable mic after a short cooldown to avoid echo pickup.
-    if (handsFree) {
-      setTimeout(() => {
-        suppressOnResult = false;
-        startRecognition();
-      }, TTS_COOLDOWN_MS);
-    }
+    maybeResumeReadyState();
     return;
   }
   const sentence = speechQueue.shift();
@@ -237,12 +339,9 @@ function setGenerating(on) {
 }
 
 function sendCancel() {
+  stopAllPlayback();
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   // Cut TTS, clear any queued sentences, tell the server to cactus_stop.
-  window.speechSynthesis.cancel();
-  speechQueue.length = 0;
-  isSpeaking = false;
-  sentenceBuffer = "";
   ws.send(JSON.stringify({ type: "cancel" }));
   addMessage("system-note", "[stopped]");
   setGenerating(false);
@@ -259,50 +358,51 @@ function addMessage(role, text = "") {
   return div;
 }
 
-function appendToAssistant(token) {
+function appendToAssistant(token, { speak = true } = {}) {
   if (!currentAssistantMsg) {
     currentAssistantMsg = addMessage("assistant", "");
-    currentAssistantMsg._rawBuffer = "";       // full stream including markers
-    currentAssistantMsg._lastVisible = "";     // what we've actually emitted
+    currentAssistantMsg._rawBuffer = "";
+    currentAssistantMsg._lastVisible = "";
   }
   currentAssistantMsg._rawBuffer += token;
   const visible = stripHiddenMarkers(currentAssistantMsg._rawBuffer);
   currentAssistantMsg.textContent = visible;
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
-  // Only feed the NEW VISIBLE delta to TTS — never speak hidden markers
-  // or the thought channel aloud.
   const delta = visible.slice(currentAssistantMsg._lastVisible.length);
   currentAssistantMsg._lastVisible = visible;
-  if (delta) {
+  if (speak && delta) {
     sentenceBuffer += delta;
     flushSentenceBuffer(false);
   }
 }
 
-function finishAssistant(finalText, stats) {
-  // If tokens already streamed into a bubble, KEEP the streamed text —
-  // do NOT overwrite with server's final_text. The server sometimes
-  // concatenates multiple passes (tool-call follow-ups) into final_text
-  // and that'd visually replace what the user has already read.
+function finishAssistant(finalText, stats, { source = "browser" } = {}) {
   if (currentAssistantMsg) {
+    if (currentAssistantFinalOnly && finalText) {
+      currentAssistantMsg.textContent = finalText;
+    }
     currentAssistantMsg = null;
   } else if (finalText) {
     addMessage("assistant", finalText);
   }
+  currentAssistantSource = null;
+  currentAssistantFinalOnly = false;
   if (stats && stats.ttft_ms) {
     ttftBadge.textContent = `TTFT ${Math.round(stats.ttft_ms)}ms · ${stats.decode_tps ? Math.round(stats.decode_tps) : "-"} tok/s`;
   }
   // Flush any remaining partial sentence to speech.
-  flushSentenceBuffer(true);
-  if (!isSpeaking && speechQueue.length === 0) {
-    setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
-    if (handsFree) {
-      setTimeout(() => {
-        suppressOnResult = false;
-        startRecognition();
-      }, TTS_COOLDOWN_MS);
-    }
+  if (source !== "rokid") {
+    flushSentenceBuffer(true);
+  } else {
+    sentenceBuffer = "";
+    clearPendingRokidAudioFallback();
+    pendingRokidAudioFallback = setTimeout(() => {
+      pendingRokidAudioFallback = null;
+      maybeResumeReadyState();
+    }, 1500);
+    return;
   }
+  maybeResumeReadyState();
 }
 
 // ── Tool activity log ───────────────────────────────────────
@@ -409,6 +509,51 @@ function updateSession(state) {
   }
 }
 
+function formatRokidSpeechDebug(debug) {
+  if (!debug || typeof debug !== "object" || Object.keys(debug).length === 0) return "—";
+  return [
+    `prob ${debug.speech_prob ?? "?"} · rms ${debug.rms_dbfs ?? "?"} dBFS`,
+    `noise ${debug.noise_floor_dbfs ?? "?"} · gate ${debug.start_gate_dbfs ?? "?"}/${debug.end_gate_dbfs ?? "?"}`,
+    `speech ${debug.speech_ms ?? "?"} ms · silence ${debug.silence_ms ?? "?"} ms`,
+    `segments ${debug.speech_starts ?? 0}/${debug.speech_ends ?? 0} · utt ${debug.utterances_finalized ?? 0}`,
+  ].join("\n");
+}
+
+function updateRokidState(state) {
+  if (!state) return;
+  rokidConnection.textContent = state.connection_state || "idle";
+  rokidIce.textContent = state.ice_connection_state || "new";
+  rokidControl.textContent = state.control_channel_state || "closed";
+  rokidSpeech.textContent = state.speech_state || "idle";
+  rokidLastUser.textContent = state.last_user_text || "—";
+  rokidLastAssistant.textContent = state.last_assistant_text || "—";
+  const audioFormat = [state.audio_input_format, state.audio_input_layout, state.audio_input_sample_rate || "", state.audio_input_channels || ""]
+    .filter(Boolean)
+    .join(" · ");
+  const debugText = formatRokidSpeechDebug(state.speech_debug);
+  rokidSpeechDebug.textContent = audioFormat ? `${audioFormat}\n${debugText}` : debugText;
+
+  const examples = Array.isArray(state.session_url_examples) ? state.session_url_examples : [];
+  rokidUrl.textContent = examples.length
+    ? `Wearable URL: ${examples[0]}`
+    : (state.dependency_error ? `Rokid unavailable: ${state.dependency_error}` : "Wearable URL unavailable");
+
+  const streamUrl = state.preview_stream_url;
+  const nextKey = `${streamUrl || ""}|${state.session_started_at || ""}|${state.preview_sequence || 0}`;
+  if (streamUrl && state.session_active && state.preview_sequence > 0) {
+    if (rokidPreviewKey !== nextKey) {
+      rokidPreview.src = `${streamUrl}?session=${encodeURIComponent(state.session_started_at || "idle")}`;
+      rokidPreviewKey = nextKey;
+    }
+    rokidPreview.classList.remove("hidden");
+    rokidEmpty.classList.add("hidden");
+  } else {
+    rokidPreview.classList.add("hidden");
+    rokidEmpty.classList.remove("hidden");
+    rokidEmpty.textContent = state.session_active ? "Waiting for first camera frame…" : "Waiting for Rokid glasses…";
+  }
+}
+
 // ── WS client ───────────────────────────────────────────────
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -427,20 +572,38 @@ function connect() {
         setStatus(handsFree ? "hands-free · listening" : "ready", "connected");
         if (evt.kb_entries != null) kbBadge.textContent = `${evt.kb_entries} KB entries`;
         break;
+      case "rokid_state":
+        updateRokidState(evt.state);
+        break;
+      case "user_turn":
+        if (evt.source === "rokid" && evt.text) {
+          currentAssistantSource = "rokid";
+          currentAssistantFinalOnly = true;
+          addMessage("user", evt.text);
+        }
+        break;
       case "token":
-        if (currentAssistantMsg === null) {
-          setStatus("thinking…", "thinking");
-          // As soon as ANY response token arrives, pause listening so the
-          // model's reply (streaming + TTS) can't trigger a rogue new turn
-          // via ambient audio / echo pickup. Resume after assistant_end.
-          suppressOnResult = true;
-          stopRecognition();
-          if (turnT0 && !turnFirstTokenT) {
-            turnFirstTokenT = performance.now();
-            console.log(`first token @ ${((turnFirstTokenT - turnT0) / 1000).toFixed(2)}s`);
+        {
+          const source = evt.source || currentAssistantSource || "browser";
+          currentAssistantSource = source;
+          currentAssistantFinalOnly = source === "rokid";
+          const speak = source !== "rokid";
+          if (currentAssistantMsg === null) {
+            setStatus("thinking…", "thinking");
+            // As soon as ANY response token arrives, pause listening so the
+            // model's reply (streaming + TTS) can't trigger a rogue new turn
+            // via ambient audio / echo pickup. Resume after assistant_end.
+            suppressOnResult = true;
+            stopRecognition();
+            if (turnT0 && !turnFirstTokenT) {
+              turnFirstTokenT = performance.now();
+              console.log(`first token @ ${((turnFirstTokenT - turnT0) / 1000).toFixed(2)}s`);
+            }
+          }
+          if (source !== "rokid") {
+            appendToAssistant(evt.token, { speak });
           }
         }
-        appendToAssistant(evt.token);
         break;
       case "tool_call":
         console.log("tool_call:", evt.name, evt.arguments);
@@ -457,7 +620,12 @@ function connect() {
           turnT0 = 0;
         }
         setGenerating(false);
-        finishAssistant(evt.text, { ttft_ms: evt.ttft_ms, decode_tps: evt.decode_tps });
+        finishAssistant(evt.text, { ttft_ms: evt.ttft_ms, decode_tps: evt.decode_tps }, { source: evt.source || currentAssistantSource || "browser" });
+        break;
+      case "assistant_audio":
+        if ((evt.source || "browser") === "rokid") {
+          playRemoteAssistantAudio(evt);
+        }
         break;
       case "error":
         addMessage("system-note", `[${evt.message}]`);
@@ -489,6 +657,8 @@ function sendUtterance(text) {
   addMessage("user", clean);
   setStatus("thinking…", "thinking");
   currentAssistantMsg = null;
+  currentAssistantSource = "browser";
+  currentAssistantFinalOnly = false;
   // Clear any lingering SR state so a delayed partial doesn't queue a
   // duplicate turn, and pause the mic while the model replies.
   finalTranscript = "";
@@ -537,10 +707,7 @@ function initRecognition() {
     // moment later in the normal flow.
     if (isSpeaking && merged.length >= MIN_UTTERANCE_CHARS) {
       console.log("[barge-in] cancelling TTS on mid-speak transcript:", merged.slice(0, 60));
-      window.speechSynthesis.cancel();
-      speechQueue.length = 0;
-      isSpeaking = false;
-      sentenceBuffer = "";
+      stopAllPlayback();
     }
 
     // Any new audio resets the silence timer.
@@ -636,9 +803,7 @@ function toggleHandsFree() {
     micBtn.textContent = "🎙️";
     micBtn.title = "Hands-free";
     stopRecognition();
-    window.speechSynthesis.cancel();
-    speechQueue.length = 0;
-    isSpeaking = false;
+    stopAllPlayback();
     // If the model was still generating when the user disabled hands-free,
     // treat it as an intent to abort — send cancel so it stops mid-stream.
     if (isGenerating) {
@@ -660,10 +825,7 @@ composer.addEventListener("submit", (e) => {
 
 resetBtn.addEventListener("click", () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  window.speechSynthesis.cancel();
-  speechQueue.length = 0;
-  isSpeaking = false;
-  sentenceBuffer = "";
+  stopAllPlayback();
   ws.send(JSON.stringify({ type: "reset" }));
   transcriptEl.innerHTML = "";
   toolLog.innerHTML = "";
@@ -673,6 +835,17 @@ resetBtn.addEventListener("click", () => {
   _onlineBannerShown = false;
   addMessage("system-note", "Session reset.");
 });
+
+if (rokidDisconnectBtn) {
+  rokidDisconnectBtn.addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/rokid/session/disconnect", { method: "POST" });
+      if (!res.ok) throw new Error(`Disconnect failed: ${res.status}`);
+    } catch (err) {
+      addMessage("system-note", `[rokid disconnect failed: ${err.message}]`);
+    }
+  });
+}
 
 // ── Camera ──────────────────────────────────────────────────
 camBtn.addEventListener("click", async () => {

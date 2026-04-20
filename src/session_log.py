@@ -91,6 +91,7 @@ def summary() -> dict[str, Any]:
     completes = [e for e in events if e.get("kind") == "complete_end"]
     errors = [e for e in events if e.get("kind") == "turn_error"]
     tool_calls = [e for e in events if e.get("kind") == "tool_call"]
+    rokid_traces = [e for e in events if e.get("kind") == "rokid_trace"]
 
     def _pct(values: list[float], p: float) -> float | None:
         if not values:
@@ -110,6 +111,7 @@ def summary() -> dict[str, Any]:
         "turn_count": len(turn_ends),
         "error_count": len(errors),
         "tool_call_count": len(tool_calls),
+        "rokid_trace_count": len(rokid_traces),
         "tool_histogram": dict(Counter(t.get("name") for t in tool_calls if t.get("name"))),
         "ttft_ms": {
             "avg": round(statistics.mean(ttfts), 1) if ttfts else None,
@@ -122,4 +124,5 @@ def summary() -> dict[str, Any]:
         "decode_tps_avg": round(statistics.mean(decodes), 2) if decodes else None,
         "prefill_tokens_median": statistics.median(prefill_toks) if prefill_toks else None,
         "turn_total_ms_avg": round(statistics.mean(totals), 1) if totals else None,
+        "recent_rokid_traces": rokid_traces[-5:],
     }

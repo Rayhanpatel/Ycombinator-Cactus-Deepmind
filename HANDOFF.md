@@ -1,5 +1,7 @@
 # HVAC Copilot — Engineering Handoff
 
+> Update 2026-04-19: this branch now also carries the merged Rokid workflow. Use `README.md` for first-time setup and `rokid.md` for wearable-specific behavior. The browser/iPhone behavior documented below remains the reference for the original mac-webapp flow.
+
 **Purpose:** full-context pickup for any engineer or AI agent continuing this branch. Zero hallucination — every claim here maps to a file, command, or commit you can verify.
 
 ---

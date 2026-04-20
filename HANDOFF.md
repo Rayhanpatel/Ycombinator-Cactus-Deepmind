@@ -1,6 +1,6 @@
 # HVAC Copilot — Engineering Handoff
 
-> Update 2026-04-19: this branch now also carries the merged Rokid workflow. Use `README.md` for first-time setup and `rokid.md` for wearable-specific behavior. The browser/iPhone behavior documented below remains the reference for the original mac-webapp flow.
+> Update 2026-04-20: post-hackathon consolidation. The Rokid AR glasses work is now merged into the live path alongside the browser/iPhone flow. Pre-consolidation submission snapshot is preserved as tag `v0.9-hackathon-submission`; the unified tip is tagged `v1.0-consolidated`. Use `README.md` for first-time setup and `rokid.md` for wearable-specific behavior.
 
 **Purpose:** full-context pickup for any engineer or AI agent continuing this branch. Zero hallucination — every claim here maps to a file, command, or commit you can verify.
 
@@ -8,16 +8,17 @@
 
 ## §1 Snapshot
 
-- **Branch:** `mac-webapp`
-- **Date written:** 2026-04-19
-- **Last pushed commit:** `9885542` — `feat: 448px camera + live MovinCool demo script + honest doc numbers`
-- **Local tip (pre-handoff commit):** `1a9208c` — `feat(tools): online escalation via Amogh's Reddit fetcher + ranker`
-- **Uncommitted at write-time:** `shared/hvac_tools.json` + `src/main.py` — prompt-relaxation tweaks for the `search_online_hvac` tool (will be committed before push)
-- **Running service:** HTTPS on `https://0.0.0.0:8443` via `uvicorn src.main:app --ssl-keyfile ./172.20.10.2+2-key.pem --ssl-certfile ./172.20.10.2+2.pem`
+- **Branch:** `consolidation` (will fast-forward to `main` as the new canonical tip)
+- **Date written:** 2026-04-20 (post-hackathon consolidation)
+- **Key tags:** `v0.9-hackathon-submission` → `mac-webapp@67cd53e` (YouTube/form submission); `v1.0-consolidated` → this tip
+- **Merged-in sources:** `origin/mac-webapp-glasses2` (Rokid full integration)
+- **Archived in-tree (not on Python path):** `archive/voice-sight-spike/` (multimodal base64 experiment), `archive/ios-ui-swiftui-spike/` (tash-2s's SwiftUI component library), `archive/ios-abandoned/` (iOS Cactus wiring scaffold)
+- **Running service:** HTTP on `http://0.0.0.0:8000` for browser + Rokid WebRTC signalling, OR HTTPS on `https://0.0.0.0:8443` via `uvicorn src.main:app --ssl-keyfile ./172.20.10.2+2-key.pem --ssl-certfile ./172.20.10.2+2.pem` for iPhone Safari over LAN
 - **Remote demo URL (iPhone over hotspot):** `https://172.20.10.2:8443/`
-- **Tests:** 65/65 pass (`cactus/venv/bin/python -m pytest tests/ -q`)
-- **What works today:** browser voice + vision UI on Mac Chrome, same UI on iPhone Safari over iPhone Personal Hotspot, 6 HVAC tools, streaming token output, progressive TTS, barge-in, spacebar cancel, session log + `/logs/*` endpoints, live Reddit escalation via anonymous JSON fallback.
-- **What does not work / has landmines:** see §12.
+- **Rokid SDP endpoint:** `http://<MAC_LAN_IP>:8000/session`
+- **Tests:** 65/65 from mac-webapp + new `tests/smoke_rokid.py` (expect 66 passing after smoke test lands)
+- **What works today:** browser voice + vision UI on Mac Chrome, same UI on iPhone Safari over iPhone Personal Hotspot, Rokid AR glasses via WebRTC bridge, 6 HVAC tools, streaming token output, progressive TTS (browser Web Speech API + Rokid Kokoro), barge-in, spacebar cancel, session log + `/logs/*` endpoints, live Reddit escalation via anonymous JSON fallback.
+- **What does not work / has landmines:** see §12. Native iOS app still retired pending Cactus Apple SDK.
 
 ---
 

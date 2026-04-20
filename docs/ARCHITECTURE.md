@@ -287,6 +287,57 @@ graph LR
 
 ---
 
+## Diagram I — Rokid AR glasses WebRTC path
+
+```mermaid
+graph LR
+    subgraph Rokid["Rokid AR glasses (Android / Kotlin)"]
+        App["MainActivity<br/>com.example.rokidiosbridge"]
+        Peer["RokidBridgePeer<br/>(WebRTC peer)"]
+        Cam["Camera2 API<br/>H.264 @ native res"]
+        Mic["AudioRecord<br/>PCM16 16 kHz mono"]
+        Hud["RokidHudViewportLayout<br/>HUD TextView"]
+    end
+
+    subgraph Mac4["MacBook Pro — FastAPI + Cactus + aiortc"]
+        SigEp["POST /session<br/>(SDP offer → answer)"]
+        Bridge["src/rokid_bridge.py<br/>RokidBridgeManager"]
+        Speech["src/speech_io.py<br/>Silero VAD → faster-whisper STT → Kokoro TTS"]
+        Runtime["src/assistant_runtime.py<br/>SharedAssistantRuntime"]
+        Cactus["src/cactus → Gemma 4 E4B"]
+        Tools["HVACToolDispatcher<br/>(6 tools, same as browser)"]
+        Preview["GET /api/rokid/preview/stream.mjpg<br/>(browser-side observability)"]
+        State["GET /api/rokid/state<br/>POST /api/rokid/control<br/>POST /api/rokid/session/disconnect"]
+    end
+
+    Cam --> Peer
+    Mic --> Peer
+    Peer -- "HTTP POST SDP offer" --> SigEp
+    SigEp -- "SDP answer" --> Peer
+    Peer <-- "RTP video (H.264) + audio (Opus)" --> Bridge
+    Peer <-- "'bridge-control' DataChannel<br/>(HUD text, status)" --> Bridge
+    Bridge -- "decoded PCM16" --> Speech
+    Speech -- "transcript" --> Runtime
+    Runtime --> Cactus
+    Runtime --> Tools
+    Runtime -- "reply text" --> Speech
+    Speech -- "Kokoro-synthesized PCM" --> Bridge
+    Bridge -- "SynthAudioTrack → RTP" --> Peer
+    Peer -- "audio out" --> App
+    Bridge -- "hud control text" --> App
+    App --> Hud
+    Bridge -.- Preview
+    Bridge -.- State
+```
+
+**Why WebRTC, not WebSocket.** Glasses can't reliably hold a full-duplex audio conversation over raw WebSocket framing — packet loss on the wearable's radio would mutilate PCM frames. WebRTC gives us congestion control, NACK/FEC, and a first-class data channel for HUD updates, all bundled with DTLS-SRTP.
+
+**Why the same `assistant_runtime`.** `SharedAssistantRuntime` is client-agnostic: it accepts a transcript and emits tokens + tool calls. Browser uses it via `/ws/session`; Rokid uses it via the WebRTC bridge. Adding a future client (native iOS, a different wearable) means writing a new adapter, not a new turn engine.
+
+**Why Kokoro + faster-whisper on the Mac, not on the glasses.** The glasses have the silicon for playback/capture but not for on-device ASR/TTS at reasonable latency. The Mac is the compute; the glasses are the transport.
+
+---
+
 ## Tech stack
 
 | Layer | Technology | Version | Where | Why |

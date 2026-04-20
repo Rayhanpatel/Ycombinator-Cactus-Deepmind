@@ -168,12 +168,33 @@ On MacBook Pro M4 Pro (CPU, no ANE — Cactus hasn't published an ANE-compiled
 | Prefill tokens per turn (with 448 px keyframe) | ~1400 |
 | KB retrieval over 18 entries | <1 ms |
 | `tests/smoke_hvac.py` 8-case benchmark | 7/8 tool-match, 7/8 arg-match |
-| Rokid end-to-end latency | _TBD — measure post-consolidation_ |
 
 The bare-model 217 ms baseline is what Cactus reports when only a short system
 prompt + user message are prefilled. In the HVAC app we pay the cost of 6 tool
 schemas + a rules-heavy system prompt + accumulated turn history, which is what
 drags TTFT to ~4 s.
+
+### Rokid end-to-end latency
+
+The Rokid bridge instruments every turn and emits a `rokid_trace` event at
+finish — see `src/rokid_bridge.py:RokidTurnTrace.summary`. Each trace breaks
+the turn into hops:
+
+| Hop | What it measures |
+| --- | --- |
+| `speech_to_finalize_ms` | mic start → Silero VAD end-of-utterance |
+| `stt_ms` | faster-whisper transcription |
+| `submit_to_assistant_ms` | Gemma 4 turn (incl. tool-loop passes) |
+| `tts_synth_ms` | Kokoro TTS synthesis |
+| `assistant_to_audio_enqueue_ms` | last token → first audio byte enqueued |
+| `audio_playback_ms` | synthesized audio wall-clock duration |
+| `speech_to_audio_enqueue_ms` | **perceived latency**: user stops talking → audio starts |
+| `speech_to_audio_finish_ms` | user stops talking → audio ends |
+
+Live per-turn data: `GET /api/rokid/state` → `last_latency_trace`.
+Aggregate over a session: `python tools/rokid_latency.py logs/session_*.jsonl`.
+
+Numbers will be populated here once enough real turns have been recorded.
 
 ## Tests
 

@@ -24,14 +24,16 @@ logger = logging.getLogger(__name__)
 
 TOOL_NAMES = {"query_kb", "log_finding", "flag_safety", "flag_scope_change", "close_job", "search_online_hvac"}
 
+# Gemma emits the opener as either `<|tool_call|>` or just `<|tool_call>`
+# (missing the middle pipe). The `\|?` in `\|tool_call(?:_start)?\|?>` accepts both.
 _TOOL_CALL_PAREN = re.compile(
-    r"(?:<\|tool_call(?:_start)?\|>\s*(?:call\s*:\s*)?)?"
+    r"(?:<\|tool_call(?:_start)?\|?>\s*(?:call\s*:\s*)?)?"
     r"\b(" + "|".join(TOOL_NAMES) + r")\s*\((.*?)\)"
     r"(?:\s*<\|tool_call_end\|>)?",
     flags=re.DOTALL,
 )
 _TOOL_CALL_CURLY = re.compile(
-    r"(?:<\|tool_call(?:_start)?\|>\s*(?:call\s*:\s*)?)?"
+    r"(?:<\|tool_call(?:_start)?\|?>\s*(?:call\s*:\s*)?)?"
     r"\b(" + "|".join(TOOL_NAMES) + r")\s*\{(.*?)\}"
     r"(?:\s*<\|tool_call_end\|>)?",
     flags=re.DOTALL,
@@ -136,6 +138,113 @@ def parse_tool_calls_from_text(text: str) -> list[dict[str, Any]]:
 
 def strip_tool_call_text(text: str) -> str:
     return _TOOL_CALL_CURLY.sub("", _TOOL_CALL_PAREN.sub("", text)).strip()
+
+
+def _strip_tool_calls_keep_ws(text: str) -> str:
+    """Same as strip_tool_call_text but preserves leading/trailing whitespace.
+    Used by the streaming sanitizer where whitespace carries over between emits."""
+    return _TOOL_CALL_CURLY.sub("", _TOOL_CALL_PAREN.sub("", text))
+
+
+class _StreamSanitizer:
+    """Holds back streaming tokens that fall inside a tool-call span so the
+    client only ever sees human-readable text.
+
+    Gemma emits tool calls in two forms (see _TOOL_CALL_PAREN / _TOOL_CALL_CURLY):
+      Form A: `<|tool_call|>name(arg=value)` or bare `name(arg=value)`
+      Form B: `<|tool_call|>name{arg: value}` or bare `name{arg: value}`
+
+    Because tokens stream one at a time, a naive "emit every token" leaks
+    `<|tool_call`, tool names, argument text, etc. into the UI even though
+    the final post-generation cleanup removes them from history.
+
+    Strategy: accumulate the full text, compute a "safe end" (the index up
+    to which it's safe to emit a stripped view), strip complete tool-call
+    spans from that prefix, and emit only the not-yet-emitted tail.
+    """
+
+    _OPENER = "<|tool_call"  # any prefix of this at buffer tail is "brewing"
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._emitted = 0
+
+    def feed(self, token: str) -> str:
+        self._buf += token
+        safe_end = self._find_safe_end()
+        cleaned = _strip_tool_calls_keep_ws(self._buf[:safe_end])
+        if len(cleaned) > self._emitted:
+            new = cleaned[self._emitted:]
+            self._emitted = len(cleaned)
+            return new
+        return ""
+
+    def flush(self) -> str:
+        # End of stream: drop any dangling partial opener or tool-call that
+        # never completed (the model cut off mid-call).
+        final = _strip_tool_calls_keep_ws(self._buf)
+        # Strip trailing partial `<|tool_call` prefix.
+        for length in range(len(self._OPENER), 0, -1):
+            if final.endswith(self._OPENER[:length]):
+                final = final[:-length]
+                break
+        # Strip trailing unclosed bare tool-call like `flag_safety(` with no close.
+        for name in TOOL_NAMES:
+            m = re.search(rf"\b{re.escape(name)}\s*[\(\{{][^\)\}}]*$", final)
+            if m:
+                final = final[:m.start()]
+                break
+        if len(final) > self._emitted:
+            tail = final[self._emitted:]
+            self._emitted = len(final)
+            return tail
+        return ""
+
+    def _find_safe_end(self) -> int:
+        end = len(self._buf)
+
+        # Rule 1: partial "<|tool_call" prefix at the tail of the buffer —
+        # the next token may complete it into a full opener.
+        for length in range(min(len(self._OPENER), len(self._buf)), 0, -1):
+            if self._buf.endswith(self._OPENER[:length]):
+                end = min(end, len(self._buf) - length)
+                break
+
+        # Rule 2: an opened `<|tool_call|>` without a matching regex close.
+        last_marker = self._buf.rfind(self._OPENER)
+        if last_marker != -1:
+            tail = self._buf[last_marker:]
+            if not (_TOOL_CALL_PAREN.match(tail) or _TOOL_CALL_CURLY.match(tail)):
+                end = min(end, last_marker)
+
+        # Rule 3: bare `name(...)` or `name{...}` where a tool name is
+        # followed by an unclosed paren/brace group.
+        for name in TOOL_NAMES:
+            pos = self._buf.rfind(name)
+            if pos == -1 or pos >= end:
+                continue
+            after = self._buf[pos + len(name):].lstrip()
+            if not after:
+                end = min(end, pos)
+                continue
+            opener = after[0]
+            if opener not in "({":
+                continue
+            closer = ")" if opener == "(" else "}"
+            depth = 0
+            closed = False
+            for ch in after:
+                if ch == opener:
+                    depth += 1
+                elif ch == closer:
+                    depth -= 1
+                    if depth == 0:
+                        closed = True
+                        break
+            if not closed:
+                end = min(end, pos)
+
+        return end
 
 
 def save_pcm_as_wav(pcm_bytes: bytes, sample_rate: int = 16000) -> str:
@@ -314,6 +423,13 @@ class AssistantSession:
             turn_id=turn_id,
         )
 
+        sanitizer = _StreamSanitizer()
+
+        async def _emit_safe(raw_token: str) -> None:
+            safe = sanitizer.feed(raw_token)
+            if safe:
+                await self.emit({"type": "token", "token": safe, "source": source, "turn_id": turn_id})
+
         async with self.engine.lock:
             task = loop.run_in_executor(
                 None,
@@ -329,16 +445,14 @@ class AssistantSession:
             while not task.done():
                 try:
                     token = await asyncio.wait_for(token_queue.get(), timeout=0.05)
-                    await self.emit({"type": "token", "token": token, "source": source, "turn_id": turn_id})
+                    await _emit_safe(token)
                 except asyncio.TimeoutError:
                     pass
             while not token_queue.empty():
-                await self.emit({
-                    "type": "token",
-                    "token": token_queue.get_nowait(),
-                    "source": source,
-                    "turn_id": turn_id,
-                })
+                await _emit_safe(token_queue.get_nowait())
+            tail = sanitizer.flush()
+            if tail:
+                await self.emit({"type": "token", "token": tail, "source": source, "turn_id": turn_id})
             raw = await task
 
         wall_ms = (time.time() - t_start) * 1000

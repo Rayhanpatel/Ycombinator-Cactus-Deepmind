@@ -58,7 +58,7 @@ Against 8 curated HVAC cases via [tests/smoke_hvac.py](tests/smoke_hvac.py) runn
 
 - **88% tool-match** — the expected tool fired for 7/8 cases. The one miss chained `log_finding` + `flag_scope_change` instead of just the latter — a benign re-ordering, not a wrong answer.
 - **100% arg-match** — the expected brand / symptom keyword appeared in every tool-call payload.
-- **~3.9–4.5 s average time to first token** on M4 Pro CPU (Cactus hasn't published an ANE-compiled `model.mlpackage` for Gemma 4 E4B yet — the warning `[WARN] [npu] [gemma4] model.mlpackage not found; using CPU prefill` confirms it at server startup). Bare-model baseline is ~217 ms per `test_gemma4.py`; the ~4 s gap is the cost of our 5-tool schema block (~500 tokens) + rules-heavy system prompt + chat-template scaffold, measured at ~935 prefill tokens per turn.
+- **~3.9–4.5 s average time to first token** on M4 Pro CPU (Cactus hasn't published an ANE-compiled `model.mlpackage` for Gemma 4 E4B yet — the warning `[WARN] [npu] [gemma4] model.mlpackage not found; using CPU prefill` confirms it at server startup). Bare-model baseline is ~217 ms per `tests/smoke_gemma4.py`; the ~4 s gap is the cost of our 5-tool schema block (~500 tokens) + rules-heavy system prompt + chat-template scaffold, measured at ~935 prefill tokens per turn.
 - **~17 tok/s decode** — a 40-token reply streams in ~2.4 s.
 
 ## Challenges

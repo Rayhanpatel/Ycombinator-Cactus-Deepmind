@@ -92,3 +92,6 @@ Internal_docs/
 
 # Ad-hoc vision-tool test photos (not versioned; use tests/fixtures/ for anything you want to share)
 Photo Test/
+
+# Archived iOS scaffold static libs — fetch from Cactus SDK distribution on revival
+archive/ios-abandoned/**/*.a

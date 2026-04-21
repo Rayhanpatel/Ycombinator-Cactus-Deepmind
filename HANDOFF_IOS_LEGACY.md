@@ -100,7 +100,7 @@ If there are errors, they'll be in `CactusModel.swift`, `ToolDispatcher.swift`, 
 
 ### Step C — Bundle the Gemma 4 E4B model (~10 min)
 
-1. Locate the model folder on your Mac (downloaded by `test_gemma4.py` or the Cactus CLI). Typical paths:
+1. Locate the model folder on your Mac (downloaded by `tests/smoke_gemma4.py` or the Cactus CLI). Typical paths:
    - `~/.cache/huggingface/hub/models--google--gemma-4-E4B-it/snapshots/<hash>/`
    - Or wherever `cactus download` saved it.
 2. In Xcode, create a **Resources** group (right-click HVACCopilot group → New Group → name it `Resources`). On disk, this should map to `HVACCopilot/HVACCopilot/Resources/`.

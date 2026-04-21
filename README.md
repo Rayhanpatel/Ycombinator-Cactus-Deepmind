@@ -196,7 +196,24 @@ the turn into hops:
 Live per-turn data: `GET /api/rokid/state` → `last_latency_trace`.
 Aggregate over a session: `python tools/rokid_latency.py logs/session_*.jsonl`.
 
-Numbers will be populated here once enough real turns have been recorded.
+**Measured during hackathon demos:** `speech_to_audio_enqueue_ms` averaged
+**~20 s** (user stops talking → audio begins playing back through the
+glasses). This is the perceived latency and it is slow. Rough per-hop
+breakdown based on component benchmarks:
+
+| Hop | Typical on M4 Pro (CPU) |
+| --- | --- |
+| Silero VAD end-of-utterance | 0.3–0.5 s |
+| faster-whisper STT | 1–2 s |
+| **Gemma 4 E4B turn (TTFT ~4 s + decode @ 17 tok/s + tool-loop passes)** | **8–12 s** |
+| Kokoro TTS synth | 1–3 s |
+| WebRTC encode + network + playback start | 0.5–1 s |
+
+The dominant cost is Gemma TTFT + decode. Cactus has not yet shipped
+an ANE-compiled `model.mlpackage` for Gemma 4 E4B; once they do, TTFT
+on M4 should drop from ~4 s to under 1 s, which alone brings end-to-end
+latency comfortably under 10 s without any other change. Shorter system
+prompts and fewer tool-loop passes per turn are additional levers.
 
 ## Tests
 

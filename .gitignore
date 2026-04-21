@@ -83,8 +83,12 @@ recordings/
 # Local HTTPS certs from mkcert (per-LAN)
 *.pem
 
-# Claude Code local settings
-.claude/
+# Claude Code local settings — ignore everything except the shared agents dir
+.claude/*
+!.claude/agents/
 
 # Private planning + transcripts (not for public repo)
 Internal_docs/
+
+# Ad-hoc vision-tool test photos (not versioned; use tests/fixtures/ for anything you want to share)
+Photo Test/

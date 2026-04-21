@@ -13,6 +13,8 @@
 Built at the YC × Cactus × Google DeepMind Voice Agents Hackathon, April 19–20 2026.
 Post-hackathon consolidation tag: `v1.0-consolidated`. Submission snapshot: `v0.9-hackathon-submission`.
 
+**Demo video (60s):** [youtube.com/shorts/xXLoZhNNC-0](https://youtube.com/shorts/xXLoZhNNC-0)
+
 ---
 
 ## The pitch

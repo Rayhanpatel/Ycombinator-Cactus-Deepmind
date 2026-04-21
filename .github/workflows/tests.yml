@@ -1,0 +1,40 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install system deps for aiortc + kokoro
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopus-dev libvpx-dev libsrtp2-dev libavdevice-dev libavfilter-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev espeak-ng
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        # The `src/cactus` FFI module is only present when cactus/ is built locally.
+        # Tests that need it check is_available and skip the live path themselves
+        # (see tests/test_cactus_engine.py). All 65 collected tests should pass.
+        run: |
+          python -m pytest tests/ -q --tb=short

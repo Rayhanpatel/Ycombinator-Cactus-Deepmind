@@ -1,0 +1,42 @@
+{
+  "id": "generic-thermostat-missing-c-wire",
+  "brand": "Other",
+  "model": "any-24v-thermostat",
+  "equipment_type": "thermostat",
+  "symptom": "Newly installed smart thermostat (Nest, Ecobee, Honeywell T-series, etc.) won't power on, reboots repeatedly, loses Wi-Fi, or says 'low battery' despite being hardwired. Older mechanical or battery-only digital stat worked fine on the same wiring. In some cases the HVAC system short-cycles because the thermostat is stealing current through the Rh-to-W loop to charge its internal battery.",
+  "diagnosis": "Missing or unterminated common (C) wire. Smart thermostats need continuous 24VAC to power the display and Wi-Fi radio; legacy stats ran on two AA batteries or pulled a trickle through the heating/cooling call circuit. Without a dedicated C connection, the new stat either can't stay online or parasitically draws current, which trips the furnace control board's safety timers and causes random cycling.",
+  "part_number": null,
+  "procedure": [
+    "Kill power to the furnace / air handler at the service switch AND the breaker. The thermostat runs on 24V but the transformer's primary side is 120/240V.",
+    "Pull the thermostat off the wall plate and photograph the existing wiring terminal-by-terminal before disconnecting anything. Label each conductor with tape.",
+    "Count the conductors in the cable. A 4-wire cable (R, W, Y, G) is the classic 'no C' install; a 5+ wire cable usually has an unused conductor already pulled — look for a blue or black wire pushed back into the wall.",
+    "Option A (spare wire present): at the furnace control board, land the unused conductor on the 'C' or 'Com' terminal of the 24V transformer secondary. At the thermostat end, land the same conductor on C. Done.",
+    "Option B (no spare wire, G wire not needed): if the smart stat controls the fan digitally (most do) and the system is single-stage, you can repurpose the green (G/fan) wire as C — but only if you install a manufacturer-supplied fan-relay kit OR the stat supports 4-wire operation natively. Read the install guide; do not guess.",
+    "Option C (no spare, all wires needed): install a 24V Fast-Stat or Venstar Add-A-Wire adapter at both ends, OR run a new 18/5 thermostat cable. A power-extender kit (Ecobee PEK, Nest Power Connector) is the faster option for retrofits.",
+    "Restore power at the breaker and service switch. Verify 24VAC between R and C at the thermostat baseplate with a multimeter before mounting the stat.",
+    "Mount the thermostat, complete its setup wizard, and run a full heating + cooling cycle. Confirm no short-cycling within 30 minutes.",
+    "Document the wire mapping on the back of the thermostat plate or in the service record so the next tech isn't guessing."
+  ],
+  "safety_notes": [
+    "Always kill 120/240V at the furnace breaker, not just the service switch. Some older installs have the transformer wired hot-side-continuous even when the switch is off.",
+    "Never jumper R to C to 'give it power' — this is a dead short across the 24V transformer secondary and will blow the low-voltage fuse on the control board (typical 3A or 5A ATC blade fuse) within seconds.",
+    "If the existing transformer is a 20VA unit, adding a smart stat plus a Wi-Fi radio can push total load above its rating, causing nuisance fuse blows. A 40VA replacement transformer is $15 and prevents callbacks.",
+    "Verify polarity if the install uses a separate cooling transformer (older dual-transformer systems): Rh and Rc must NOT be jumpered if two transformers are present, or you will short them together.",
+    "On heat pump systems, the O/B reversing valve terminal is brand-specific (O = Carrier/Trane cooling-energized; B = Rheem/Ruud heating-energized). Wrong selection in the thermostat setup menu causes the system to heat when the customer asks for cool — a comfort complaint that is easy to miss on a quick commissioning."
+  ],
+  "estimated_minutes": 40,
+  "tags": [
+    "c wire",
+    "common wire",
+    "smart thermostat",
+    "nest",
+    "ecobee",
+    "honeywell",
+    "no power",
+    "reboot loop",
+    "short cycling",
+    "24v",
+    "transformer",
+    "retrofit"
+  ]
+}

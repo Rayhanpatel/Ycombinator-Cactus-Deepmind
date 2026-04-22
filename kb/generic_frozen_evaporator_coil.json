@@ -1,0 +1,40 @@
+{
+  "id": "generic-frozen-evaporator-coil",
+  "brand": "Other",
+  "model": "any-split-system",
+  "equipment_type": "air-handler",
+  "symptom": "AC is running but blowing weak, barely-cool air from the supply vents. Customer may report ice visible on the copper suction line at the outdoor unit, or water dripping from the indoor air handler / furnace cabinet after the system has run for several hours. Thermostat is set low but house won't cool down. In severe cases the return grille is cold to the touch and the evaporator coil inside the cabinet is fully encased in ice.",
+  "diagnosis": "Frozen evaporator coil. Airflow across the coil has dropped below the design minimum (typically ~350-400 CFM per ton), so the refrigerant in the coil boils off at a temperature below 32°F and ambient moisture freezes onto the fins. The most common root cause is a clogged air filter restricting return airflow; secondary causes are a dirty evaporator coil, a failing blower, closed or blocked supply registers, or low refrigerant charge from a slow leak. Running the system with a frozen coil will eventually slug liquid refrigerant back to the compressor and destroy it.",
+  "part_number": null,
+  "procedure": [
+    "Confirm the diagnosis: turn off cooling at the thermostat and inspect the suction line at the outdoor unit and the evaporator coil at the indoor air handler. Ice on either is confirmation.",
+    "Set the thermostat to OFF (cooling) and FAN to ON. Running the blower with warm return air across the coil thaws it 3-4x faster than leaving the whole system off.",
+    "Pull the air filter and inspect. If it is visibly loaded with dust or you cannot see light through it, replace with a matching MERV 8-11 filter (high-MERV filters above 13 can themselves restrict airflow on residential equipment).",
+    "Place towels or a shallow pan under the air handler. Thawing ice will overflow the condensate pan in most installs.",
+    "Allow the coil to thaw completely — typically 1-4 hours depending on ice thickness. Do not restart cooling until the coil and suction line are warm to the touch and the drain pan is no longer producing water.",
+    "Once thawed, inspect the evaporator coil face. If the fins are matted with dust, schedule a coil cleaning (no-rinse foaming coil cleaner) as a follow-up; log with log_finding.",
+    "Open and check every supply register in the house is unobstructed (furniture, rugs, closed dampers). A closed-off finished basement is a classic trigger.",
+    "Restart cooling. Measure the temperature split: supply-air temp should be 15-20°F colder than return-air temp after 15 minutes of runtime. A split below 14°F or above 22°F indicates the underlying problem is not just the filter.",
+    "If the coil refreezes within 24 hours on a clean filter, escalate: likely low refrigerant charge (requires EPA 608 certified work) or a failing blower. Use flag_scope_change to document; do not attempt refrigerant work without certification."
+  ],
+  "safety_notes": [
+    "Never chip, scrape, or pick at the ice with a screwdriver, ice pick, or any sharp tool. Evaporator fins are 0.006-inch aluminum and refrigerant tubes sit directly behind them — a puncture releases refrigerant under pressure and ruins the coil.",
+    "Do not use a heat gun, hair dryer, or torch to speed the thaw. Localized heating stresses brazed joints and can start a cabinet fire if insulation is present.",
+    "Melting ice will overflow the condensate pan in almost every case. Protect flooring, drywall, and any electronics below the air handler before starting the thaw.",
+    "If the coil refreezes and you suspect refrigerant loss, stop. Refrigerant handling requires EPA Section 608 certification — unlicensed venting is a federal violation and a slugged compressor is a $2000+ callback.",
+    "Attic air handlers: wet insulation on attic floor joists may be rot-compromised after prolonged leaks. Test load before kneeling."
+  ],
+  "estimated_minutes": 45,
+  "tags": [
+    "frozen coil",
+    "iced coil",
+    "weak airflow",
+    "not cooling",
+    "dirty filter",
+    "low airflow",
+    "evaporator",
+    "suction line ice",
+    "temperature split",
+    "common"
+  ]
+}
